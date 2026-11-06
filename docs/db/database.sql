@@ -4,14 +4,14 @@
 SET NAMES utf8mb4;
 
 CREATE TABLE `savez` (
-  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `naziv` VARCHAR(255) NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `korisnik` (
-  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `id_savez` INT UNSIGNED NULL COMMENT 'NULL samo za SuperAdmin',
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `id_savez` BIGINT UNSIGNED NULL COMMENT 'NULL samo za SuperAdmin',
   `korisnicko_ime` VARCHAR(255) NOT NULL,
   `lozinka_hash` VARCHAR(255) NOT NULL,
   `uloga` ENUM('AdminSaveza', 'Zapisnicar', 'SuperAdmin') NOT NULL,
@@ -21,114 +21,114 @@ CREATE TABLE `korisnik` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `klub` (
-  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `naziv` VARCHAR(255) NOT NULL,
-  `id_savez` INT UNSIGNED NOT NULL,
+  `id_savez` BIGINT UNSIGNED NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `kategorija` (
-  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `naziv` VARCHAR(255) NOT NULL,
   `max_dob` INT NULL,
-  `id_savez` INT UNSIGNED NOT NULL,
+  `id_savez` BIGINT UNSIGNED NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `sezona` (
-  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `naziv` VARCHAR(255) NOT NULL,
   `godina_pocetka` INT NOT NULL,
   `godina_zavrsetka` INT NOT NULL,
-  `id_savez` INT UNSIGNED NOT NULL,
+  `id_savez` BIGINT UNSIGNED NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `liga` (
-  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `naziv` VARCHAR(255) NOT NULL,
-  `id_kategorija` INT UNSIGNED NOT NULL,
-  `id_savez` INT UNSIGNED NOT NULL,
+  `id_kategorija` BIGINT UNSIGNED NOT NULL,
+  `id_savez` BIGINT UNSIGNED NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `izdanje_lige` (
-  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  `id_liga` INT UNSIGNED NOT NULL,
-  `id_sezona` INT UNSIGNED NOT NULL,
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `id_liga` BIGINT UNSIGNED NOT NULL,
+  `id_sezona` BIGINT UNSIGNED NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `izdanje_lige_liga_sezona_unique` (`id_liga`, `id_sezona`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `selekcija` (
-  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `naziv` VARCHAR(255) NOT NULL,
-  `id_klub` INT UNSIGNED NOT NULL,
-  `id_kategorija` INT UNSIGNED NOT NULL,
+  `id_klub` BIGINT UNSIGNED NOT NULL,
+  `id_kategorija` BIGINT UNSIGNED NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `ekipa_u_ligi` (
-  `id_izdanje_lige` INT UNSIGNED NOT NULL,
-  `id_selekcija` INT UNSIGNED NOT NULL,
+  `id_izdanje_lige` BIGINT UNSIGNED NOT NULL,
+  `id_selekcija` BIGINT UNSIGNED NOT NULL,
   PRIMARY KEY (`id_izdanje_lige`, `id_selekcija`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `igrac` (
-  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `ime` VARCHAR(255) NOT NULL,
   `prezime` VARCHAR(255) NOT NULL,
   `datum_rodenja` DATE NOT NULL,
   `broj_licence` VARCHAR(255) NOT NULL,
-  `id_klub` INT UNSIGNED NOT NULL,
+  `id_klub` BIGINT UNSIGNED NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `nastupa_za_selekciju` (
-  `id_igrac` INT UNSIGNED NOT NULL,
-  `id_selekcija` INT UNSIGNED NOT NULL,
-  `id_sezona` INT UNSIGNED NOT NULL,
+  `id_igrac` BIGINT UNSIGNED NOT NULL,
+  `id_selekcija` BIGINT UNSIGNED NOT NULL,
+  `id_sezona` BIGINT UNSIGNED NOT NULL,
   PRIMARY KEY (`id_igrac`, `id_selekcija`, `id_sezona`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `trener` (
-  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `ime` VARCHAR(255) NOT NULL,
   `prezime` VARCHAR(255) NOT NULL,
   `broj_licence` VARCHAR(255) NOT NULL,
-  `id_klub` INT UNSIGNED NOT NULL,
+  `id_klub` BIGINT UNSIGNED NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `sudac` (
-  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `ime` VARCHAR(255) NOT NULL,
   `prezime` VARCHAR(255) NOT NULL,
-  `id_savez` INT UNSIGNED NOT NULL,
+  `id_savez` BIGINT UNSIGNED NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `dvorana` (
-  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `naziv` VARCHAR(255) NOT NULL,
   `mjesto` VARCHAR(255) NOT NULL,
-  `id_savez` INT UNSIGNED NOT NULL,
+  `id_savez` BIGINT UNSIGNED NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `utakmica` (
-  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   `broj_utakmice` INT NOT NULL,
   `kolo` INT NULL,
-  `id_izdanje_lige` INT UNSIGNED NOT NULL,
-  `id_selekcija_domacin` INT UNSIGNED NOT NULL,
-  `id_selekcija_gost` INT UNSIGNED NOT NULL,
+  `id_izdanje_lige` BIGINT UNSIGNED NOT NULL,
+  `id_selekcija_domacin` BIGINT UNSIGNED NOT NULL,
+  `id_selekcija_gost` BIGINT UNSIGNED NOT NULL,
   `datum_vrijeme` DATETIME NOT NULL,
-  `id_dvorana` INT UNSIGNED NULL,
-  `id_glavni_sudac` INT UNSIGNED NULL,
-  `id_sudac_1` INT UNSIGNED NULL,
-  `id_sudac_2` INT UNSIGNED NULL,
-  `id_zapisnicar` INT UNSIGNED NULL COMMENT 'dodjeljuje admin',
+  `id_dvorana` BIGINT UNSIGNED NULL,
+  `id_glavni_sudac` BIGINT UNSIGNED NULL,
+  `id_sudac_1` BIGINT UNSIGNED NULL,
+  `id_sudac_2` BIGINT UNSIGNED NULL,
+  `id_zapisnicar` BIGINT UNSIGNED NULL COMMENT 'dodjeljuje admin',
   `pomocni_zapisnicar` VARCHAR(255) NULL,
   `mjeritelj_vremena` VARCHAR(255) NULL,
   `operater_24s` VARCHAR(255) NULL,
@@ -145,9 +145,9 @@ CREATE TABLE `utakmica` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `utakmica_sastav` (
-  `id_utakmica` INT UNSIGNED NOT NULL,
-  `id_igrac` INT UNSIGNED NOT NULL,
-  `id_selekcija` INT UNSIGNED NOT NULL,
+  `id_utakmica` BIGINT UNSIGNED NOT NULL,
+  `id_igrac` BIGINT UNSIGNED NOT NULL,
+  `id_selekcija` BIGINT UNSIGNED NOT NULL,
   `broj_dresa` INT NOT NULL,
   `kapetan` BOOLEAN NOT NULL DEFAULT FALSE,
   `u_prvoj_petorci` BOOLEAN NOT NULL DEFAULT FALSE,
@@ -156,9 +156,9 @@ CREATE TABLE `utakmica_sastav` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `utakmica_trener` (
-  `id_utakmica` INT UNSIGNED NOT NULL,
-  `id_selekcija` INT UNSIGNED NOT NULL,
-  `id_trener` INT UNSIGNED NOT NULL,
+  `id_utakmica` BIGINT UNSIGNED NOT NULL,
+  `id_selekcija` BIGINT UNSIGNED NOT NULL,
+  `id_trener` BIGINT UNSIGNED NOT NULL,
   `uloga` ENUM('Glavni', 'Pomocni') NOT NULL,
   PRIMARY KEY (`id_utakmica`, `id_selekcija`, `uloga`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -166,14 +166,14 @@ CREATE TABLE `utakmica_trener` (
 CREATE TABLE `aktivnost` (
   `id` CHAR(36) NOT NULL COMMENT 'UUID v4 koji generira tablet',
   `redni_broj` INT NOT NULL,
-  `id_utakmica` INT UNSIGNED NOT NULL,
+  `id_utakmica` BIGINT UNSIGNED NOT NULL,
   `tip` ENUM('Kos_1', 'Kos_2', 'Kos_3', 'Osobna_P', 'Tehnicka_T', 'Nesportska_U',
              'Diskvalifikacijska_D', 'Tehnicka_C', 'Tehnicka_B', 'Zamjena',
              'Timeout', 'HCC', 'Zavrsi_cetvrtinu') NOT NULL,
-  `id_igrac` INT UNSIGNED NULL,
-  `id_trener` INT UNSIGNED NULL,
-  `id_selekcija` INT UNSIGNED NULL,
-  `id_igrac_izlazi` INT UNSIGNED NULL,
+  `id_igrac` BIGINT UNSIGNED NULL,
+  `id_trener` BIGINT UNSIGNED NULL,
+  `id_selekcija` BIGINT UNSIGNED NULL,
+  `id_igrac_izlazi` BIGINT UNSIGNED NULL,
   `cetvrtina` INT NOT NULL,
   `minuta` INT NULL,
   `kreirano` DATETIME NOT NULL,
