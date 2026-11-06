@@ -13,7 +13,7 @@ export class App {
   async dohvatiPodatke(): Promise<void> {
     
     try {
-      const odgovor = await fetch('http://127.0.0.1:8000/');
+      const odgovor = await fetch('http://127.0.0.1:8000');
       
       if (odgovor.ok) {
         const podaci: string = await odgovor.json();
