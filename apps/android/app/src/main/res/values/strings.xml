@@ -1,3 +1,16 @@
 <resources>
     <string name="app_name">KoshApp</string>
+
+    <!-- Health ekran -->
+    <string name="health_loading">Provjera veze s poslužiteljem…</string>
+    <string name="health_server_status">Server: %1$s</string>
+    <string name="health_refresh">Osvježi</string>
+    <string name="health_retry">Pokušaj ponovno</string>
+
+    <!-- Pogreške -->
+    <string name="error_no_connection">Nema veze s poslužiteljem. Provjerite internetsku vezu i je li poslužitelj pokrenut.</string>
+    <string name="error_timeout">Poslužitelj ne odgovara. Pokušajte ponovno kasnije.</string>
+    <string name="error_http">Greška poslužitelja (kod %1$d).</string>
+    <string name="error_invalid_response">Poslužitelj je vratio neispravan odgovor.</string>
+    <string name="error_unknown">Došlo je do neočekivane pogreške.</string>
 </resources>
