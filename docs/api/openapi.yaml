@@ -1,0 +1,4245 @@
+openapi: 3.0.3
+info:
+  title: KoshApp API
+  version: 0.1.0
+  description: |
+    API digitalnog košarkaškog zapisnika (KOSH-40).
+
+    Specifikacija opisuje i dijelove koji još nisu implementirani (EP-2 do EP-8).
+    Pravila dizajna su u `docs/api-dogovori.md`.
+
+    ## Prijava i uloge
+    - Prijava tokenom (Laravel Sanctum): `POST /api/auth/login` vraća token,
+      koji se šalje u zaglavlju `Authorization: Bearer <token>`.
+    - Uloge: `admin` (admin saveza, samo web), `scorer` (zapisničar, samo tablet),
+      `super_admin` (vlasnik platforme). Uloga koja smije pozvati endpoint navedena je
+      u opisu svakog endpointa i u proširenju `x-roles`.
+    - **Savez (tenant) se uvijek određuje iz tokena.** Nikad se ne šalje kao parametar.
+      Resurs drugog saveza ponaša se kao da ne postoji (`404`).
+
+    ## Konvencije
+    - JSON, imena polja `snake_case` na engleskom.
+    - Datumi i vremena u ISO 8601, UTC (npr. `2026-11-14T17:00:00Z`). Prikaz u zoni
+      Europe/Zagreb radi klijent.
+    - Identifikatori resursa su cijeli brojevi. Događaji utakmice imaju **UUID v4**
+      koji generira klijent.
+    - Pojedinačni resurs vraća se kao `{ "data": { ... } }`.
+    - Popisi: `?page=1&per_page=25` (zadano 25, najviše 100), odgovor
+      `{ "data": [...], "meta": { "page", "per_page", "total", "last_page" } }`.
+    - Greške: `{ "message", "code", "errors" }` (`errors` samo kod validacije, `422`).
+
+    ## Brisanje
+    Brisanje šifranika blokirano je ako je zapis u upotrebi. Tada se vraća `409`
+    s kodom `resource_in_use`.
+
+    ## Pretpostavke (potvrditi s timom / savezom)
+    Mjesta označena s **(pretpostavka)** nisu definirana u dokumentaciji.
+  contact:
+    name: KoshApp tim
+servers:
+  - url: http://localhost:8000/api
+    description: Lokalni razvoj (php artisan serve)
+  - url: http://10.0.2.2:8000/api
+    description: Lokalni razvoj iz Android emulatora
+
+tags:
+  - name: System
+    description: Provjera rada servera
+  - name: Auth
+    description: Prijava i odjava (EP-2)
+  - name: Users
+    description: Računi zapisničara (EP-2, KOSH-46)
+  - name: Seasons
+    description: Sezone (KOSH-47)
+  - name: Categories
+    description: Dobne kategorije (KOSH-48)
+  - name: Leagues
+    description: Lige (KOSH-49)
+  - name: League editions
+    description: Izdanja lige u sezoni i prijavljene ekipe (KOSH-50, KOSH-51)
+  - name: Clubs
+    description: Klubovi (KOSH-52)
+  - name: Club teams
+    description: Selekcije kluba i kadrovi po sezoni (KOSH-53, KOSH-55)
+  - name: Players
+    description: Igrači (KOSH-54)
+  - name: Coaches
+    description: Treneri (KOSH-56)
+  - name: Referees
+    description: Suci (KOSH-57)
+  - name: Venues
+    description: Dvorane (KOSH-58)
+  - name: Matches
+    description: Raspored i podaci utakmice (EP-4, KOSH-64, KOSH-65, EP-8)
+  - name: Match preparation
+    description: Sastavi, treneri i početak utakmice (EP-5)
+  - name: Match events
+    description: Događaji utakmice i izvedeno stanje (EP-6)
+  - name: Match closing
+    description: Završetak, predaja i PDF zapisnik (EP-7)
+
+security:
+  - bearerAuth: []
+
+paths:
+  # ---------------------------------------------------------------- System
+  /health:
+    get:
+      tags: [System]
+      operationId: getHealth
+      summary: Provjera rada servera
+      description: |
+        Javni endpoint, ne traži prijavu.
+
+        **Uloga:** javno
+      x-roles: [public]
+      security: []
+      responses:
+        '200':
+          description: Server radi
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    example: ok
+              example:
+                status: ok
+
+  # ---------------------------------------------------------------- Auth
+  /auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      summary: Prijava korisničkim imenom i lozinkom
+      description: |
+        Vraća Sanctum token. Pravila:
+        - Deaktiviran račun ne može se prijaviti.
+        - Pogrešno korisničko ime ili lozinka daju opću poruku (`invalid_credentials`),
+          ne otkriva se što je pogrešno.
+        - `client` određuje odakle se korisnik prijavljuje: `web` dopušta samo
+          `admin` (i `super_admin`), `tablet` samo `scorer`. Inače `403`
+          s kodom `role_not_allowed_on_client`. **(pretpostavka: polje `client`)**
+        - Lozinka se nikad ne vraća.
+
+        **Uloga:** javno
+      x-roles: [public]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            examples:
+              tablet:
+                summary: Zapisničar na tabletu
+                value:
+                  username: ivan.zapisnicar
+                  password: tajna-lozinka
+                  device_name: Samsung Tab A8 (dvorana Varaždin)
+                  client: tablet
+              web:
+                summary: Admin na webu
+                value:
+                  username: admin.ksvz
+                  password: tajna-lozinka
+                  device_name: Chrome
+                  client: web
+      responses:
+        '200':
+          description: Uspješna prijava
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Pogrešni podaci ili deaktiviran račun
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                invalid:
+                  value:
+                    message: Pogrešno korisničko ime ili lozinka.
+                    code: invalid_credentials
+                inactive:
+                  value:
+                    message: Račun je deaktiviran.
+                    code: account_inactive
+        '403':
+          description: Uloga ne smije koristiti ovog klijenta
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: Zapisničar se ne može prijaviti na web aplikaciju.
+                code: role_not_allowed_on_client
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: Odjava (poništava trenutni token)
+      description: |
+        **Uloga:** admin, scorer, super_admin
+      x-roles: [admin, scorer, super_admin]
+      responses:
+        '204':
+          description: Odjavljen
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      operationId: getMe
+      summary: Podaci o prijavljenom korisniku
+      description: |
+        **Uloga:** admin, scorer, super_admin
+      x-roles: [admin, scorer, super_admin]
+      responses:
+        '200':
+          description: Prijavljeni korisnik
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AuthUser'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+
+  # ---------------------------------------------------------------- Users
+  /users:
+    get:
+      tags: [Users]
+      operationId: listUsers
+      summary: Popis zapisničara saveza
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
+        - name: is_active
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Popis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserList'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Users]
+      operationId: createUser
+      summary: Kreiranje računa zapisničara
+      description: |
+        - Uloga je fiksno `scorer`, savez se postavlja prema adminu.
+        - Korisničko ime je jedinstveno unutar saveza.
+        - Ako se `password` ne pošalje, sustav generira lozinku.
+        - Početna lozinka vraća se **samo u ovom odgovoru** (`initial_password`).
+        - Lozinka se sprema samo kao hash.
+
+        **Uloga:** admin
+      x-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreateInput'
+      responses:
+        '201':
+          description: Račun kreiran
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/UserCreated'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /users/{user}:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    get:
+      tags: [Users]
+      operationId: getUser
+      summary: Jedan zapisničar
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      responses:
+        '200':
+          description: Zapisničar
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Users]
+      operationId: updateUser
+      summary: Aktivacija ili deaktivacija računa
+      description: |
+        Deaktiviran račun ne može se prijaviti, a njegovi postojeći tokeni se poništavaju.
+        **(pretpostavka: deaktivacija je dovoljna, računi se ne brišu)**
+
+        **Uloga:** admin
+      x-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdateInput'
+      responses:
+        '200':
+          description: Ažuriran
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  # ---------------------------------------------------------------- Seasons
+  /seasons:
+    get:
+      tags: [Seasons]
+      operationId: listSeasons
+      summary: Popis sezona
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Popis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SeasonList'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Seasons]
+      operationId: createSeason
+      summary: Nova sezona
+      description: |
+        `end_year` ne smije biti manji od `start_year`.
+
+        **Uloga:** admin
+      x-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SeasonInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/SeasonResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /seasons/{season}:
+    parameters:
+      - $ref: '#/components/parameters/SeasonId'
+    get:
+      tags: [Seasons]
+      operationId: getSeason
+      summary: Jedna sezona
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      responses:
+        '200':
+          $ref: '#/components/responses/SeasonResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Seasons]
+      operationId: updateSeason
+      summary: Izmjena sezone
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SeasonInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/SeasonResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Seasons]
+      operationId: deleteSeason
+      summary: Brisanje sezone
+      description: |
+        Blokirano ako sezona ima izdanja lige ili kadrove (`409 resource_in_use`).
+
+        **Uloga:** admin
+      x-roles: [admin]
+      responses:
+        '204':
+          description: Obrisano
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/ResourceInUse'
+
+  # ---------------------------------------------------------------- Categories
+  /categories:
+    get:
+      tags: [Categories]
+      operationId: listCategories
+      summary: Popis dobnih kategorija
+      description: |
+        Početni popis dolazi iz seed podataka.
+
+        **Uloga:** admin
+      x-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Popis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategoryList'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Categories]
+      operationId: createCategory
+      summary: Nova kategorija
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/CategoryResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /categories/{category}:
+    parameters:
+      - $ref: '#/components/parameters/CategoryId'
+    get:
+      tags: [Categories]
+      operationId: getCategory
+      summary: Jedna kategorija
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      responses:
+        '200':
+          $ref: '#/components/responses/CategoryResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Categories]
+      operationId: updateCategory
+      summary: Izmjena kategorije
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategoryInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/CategoryResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Categories]
+      operationId: deleteCategory
+      summary: Brisanje kategorije
+      description: |
+        Blokirano ako kategoriju koriste lige ili selekcije (`409 resource_in_use`).
+
+        **Uloga:** admin
+      x-roles: [admin]
+      responses:
+        '204':
+          description: Obrisano
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/ResourceInUse'
+
+  # ---------------------------------------------------------------- Leagues
+  /leagues:
+    get:
+      tags: [Leagues]
+      operationId: listLeagues
+      summary: Popis liga
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/CategoryFilter'
+      responses:
+        '200':
+          description: Popis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeagueList'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Leagues]
+      operationId: createLeague
+      summary: Nova liga
+      description: |
+        Liga ne ovisi o sezoni; u sezoni se otvara kao izdanje lige.
+
+        **Uloga:** admin
+      x-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeagueInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/LeagueResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /leagues/{league}:
+    parameters:
+      - $ref: '#/components/parameters/LeagueId'
+    get:
+      tags: [Leagues]
+      operationId: getLeague
+      summary: Jedna liga
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      responses:
+        '200':
+          $ref: '#/components/responses/LeagueResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Leagues]
+      operationId: updateLeague
+      summary: Izmjena lige
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeagueInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/LeagueResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Leagues]
+      operationId: deleteLeague
+      summary: Brisanje lige
+      description: |
+        Blokirano ako liga ima izdanja (`409 resource_in_use`).
+
+        **Uloga:** admin
+      x-roles: [admin]
+      responses:
+        '204':
+          description: Obrisano
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/ResourceInUse'
+
+  # ---------------------------------------------------------------- League editions
+  /league-editions:
+    get:
+      tags: [League editions]
+      operationId: listLeagueEditions
+      summary: Popis izdanja liga
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/SeasonFilter'
+        - $ref: '#/components/parameters/LeagueFilter'
+      responses:
+        '200':
+          description: Popis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeagueEditionList'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [League editions]
+      operationId: createLeagueEdition
+      summary: Otvaranje lige u sezoni
+      description: |
+        Par (`league_id`, `season_id`) može postojati samo jednom (inače `422`).
+
+        **Uloga:** admin
+      x-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeagueEditionInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/LeagueEditionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /league-editions/{league_edition}:
+    parameters:
+      - $ref: '#/components/parameters/LeagueEditionId'
+    get:
+      tags: [League editions]
+      operationId: getLeagueEdition
+      summary: Jedno izdanje lige
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      responses:
+        '200':
+          $ref: '#/components/responses/LeagueEditionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [League editions]
+      operationId: deleteLeagueEdition
+      summary: Brisanje izdanja lige
+      description: |
+        Blokirano ako izdanje ima prijavljene ekipe ili utakmice (`409 resource_in_use`).
+
+        **Uloga:** admin
+      x-roles: [admin]
+      responses:
+        '204':
+          description: Obrisano
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/ResourceInUse'
+  /league-editions/{league_edition}/teams:
+    parameters:
+      - $ref: '#/components/parameters/LeagueEditionId'
+    get:
+      tags: [League editions]
+      operationId: listLeagueEditionTeams
+      summary: Ekipe prijavljene u izdanje lige
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      responses:
+        '200':
+          description: Popis ekipa (bez paginacije)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ClubTeam'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [League editions]
+      operationId: addLeagueEditionTeam
+      summary: Prijava selekcije u izdanje lige
+      description: |
+        - Selekcija mora biti iste kategorije kao liga.
+        - Selekcija se ne može dodati dvaput u isto izdanje.
+
+        **Uloga:** admin
+      x-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeagueEditionTeamInput'
+      responses:
+        '201':
+          description: Selekcija prijavljena
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ClubTeam'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /league-editions/{league_edition}/teams/{club_team}:
+    parameters:
+      - $ref: '#/components/parameters/LeagueEditionId'
+      - $ref: '#/components/parameters/ClubTeamId'
+    delete:
+      tags: [League editions]
+      operationId: removeLeagueEditionTeam
+      summary: Uklanjanje selekcije iz izdanja lige
+      description: |
+        Blokirano ako selekcija ima utakmica u tom izdanju (`409 resource_in_use`).
+
+        **Uloga:** admin
+      x-roles: [admin]
+      responses:
+        '204':
+          description: Uklonjeno
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/ResourceInUse'
+
+  # ---------------------------------------------------------------- Clubs
+  /clubs:
+    get:
+      tags: [Clubs]
+      operationId: listClubs
+      summary: Popis klubova
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
+      responses:
+        '200':
+          description: Popis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClubList'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Clubs]
+      operationId: createClub
+      summary: Novi klub
+      description: |
+        Savez se postavlja automatski iz tokena.
+
+        **Uloga:** admin
+      x-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClubInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/ClubResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /clubs/{club}:
+    parameters:
+      - $ref: '#/components/parameters/ClubId'
+    get:
+      tags: [Clubs]
+      operationId: getClub
+      summary: Jedan klub
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      responses:
+        '200':
+          $ref: '#/components/responses/ClubResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Clubs]
+      operationId: updateClub
+      summary: Izmjena kluba
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClubInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/ClubResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Clubs]
+      operationId: deleteClub
+      summary: Brisanje kluba
+      description: |
+        Blokirano ako klub ima igrače, selekcije ili trenere (`409 resource_in_use`).
+
+        **Uloga:** admin
+      x-roles: [admin]
+      responses:
+        '204':
+          description: Obrisano
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/ResourceInUse'
+
+  # ---------------------------------------------------------------- Club teams
+  /club-teams:
+    get:
+      tags: [Club teams]
+      operationId: listClubTeams
+      summary: Popis selekcija
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/ClubFilter'
+        - $ref: '#/components/parameters/CategoryFilter'
+      responses:
+        '200':
+          description: Popis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClubTeamList'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Club teams]
+      operationId: createClubTeam
+      summary: Nova selekcija kluba
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClubTeamInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/ClubTeamResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /club-teams/{club_team}:
+    parameters:
+      - $ref: '#/components/parameters/ClubTeamId'
+    get:
+      tags: [Club teams]
+      operationId: getClubTeam
+      summary: Jedna selekcija
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      responses:
+        '200':
+          $ref: '#/components/responses/ClubTeamResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Club teams]
+      operationId: updateClubTeam
+      summary: Izmjena selekcije
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClubTeamInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/ClubTeamResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Club teams]
+      operationId: deleteClubTeam
+      summary: Brisanje selekcije
+      description: |
+        Blokirano ako je selekcija prijavljena u ligu ili ima utakmica
+        (`409 resource_in_use`).
+
+        **Uloga:** admin
+      x-roles: [admin]
+      responses:
+        '204':
+          description: Obrisano
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/ResourceInUse'
+  /club-teams/{club_team}/rosters/{season}/players:
+    parameters:
+      - $ref: '#/components/parameters/ClubTeamId'
+      - $ref: '#/components/parameters/SeasonId'
+    get:
+      tags: [Club teams]
+      operationId: listRosterPlayers
+      summary: Kadar selekcije u sezoni
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      responses:
+        '200':
+          description: Igrači u kadru (bez paginacije)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Player'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [Club teams]
+      operationId: addRosterPlayer
+      summary: Upis igrača u kadar selekcije za sezonu
+      description: |
+        - Igrač mora biti iz istog kluba kao selekcija.
+        - Dob igrača mora odgovarati kategoriji selekcije: smije igrati u svojoj i
+          starijim kategorijama, ne u mlađima **(pravilo i način računanja dobi potvrditi)**.
+        - Isti igrač može u istoj sezoni biti u više selekcija istog kluba.
+        - Ista kombinacija (igrač, selekcija, sezona) ne može se unijeti dvaput.
+
+        **Uloga:** admin
+      x-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RosterEntryInput'
+      responses:
+        '201':
+          description: Igrač upisan u kadar
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Player'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Validacija (npr. drugi klub, premlad igrač za kategoriju)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: Podaci nisu ispravni.
+                code: validation_error
+                errors:
+                  player_id:
+                    - Igrač je premlad za kategoriju ove selekcije.
+  /club-teams/{club_team}/rosters/{season}/players/{player}:
+    parameters:
+      - $ref: '#/components/parameters/ClubTeamId'
+      - $ref: '#/components/parameters/SeasonId'
+      - $ref: '#/components/parameters/PlayerId'
+    delete:
+      tags: [Club teams]
+      operationId: removeRosterPlayer
+      summary: Uklanjanje igrača iz kadra
+      description: |
+        Blokirano ako je igrač prijavljen na utakmicu u toj selekciji i sezoni
+        (`409 resource_in_use`).
+
+        **Uloga:** admin
+      x-roles: [admin]
+      responses:
+        '204':
+          description: Uklonjeno
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/ResourceInUse'
+
+  # ---------------------------------------------------------------- Players
+  /players:
+    get:
+      tags: [Players]
+      operationId: listPlayers
+      summary: Popis igrača
+      description: |
+        `search` pretražuje ime, prezime i broj licence.
+
+        **Uloga:** admin
+      x-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/ClubFilter'
+      responses:
+        '200':
+          description: Popis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlayerList'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Players]
+      operationId: createPlayer
+      summary: Novi igrač
+      description: |
+        Datum rođenja ne smije biti u budućnosti. Igrač pripada točno jednom klubu.
+
+        **Uloga:** admin
+      x-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlayerInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/PlayerResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /players/{player}:
+    parameters:
+      - $ref: '#/components/parameters/PlayerId'
+    get:
+      tags: [Players]
+      operationId: getPlayer
+      summary: Jedan igrač
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      responses:
+        '200':
+          $ref: '#/components/responses/PlayerResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Players]
+      operationId: updatePlayer
+      summary: Izmjena igrača
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlayerInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/PlayerResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Players]
+      operationId: deletePlayer
+      summary: Brisanje igrača
+      description: |
+        Blokirano ako je igrač u kadru selekcije ili sastavu utakmice
+        (`409 resource_in_use`).
+
+        **Uloga:** admin
+      x-roles: [admin]
+      responses:
+        '204':
+          description: Obrisano
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/ResourceInUse'
+
+  # ---------------------------------------------------------------- Coaches
+  /coaches:
+    get:
+      tags: [Coaches]
+      operationId: listCoaches
+      summary: Popis trenera
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/ClubFilter'
+      responses:
+        '200':
+          description: Popis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CoachList'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Coaches]
+      operationId: createCoach
+      summary: Novi trener
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CoachInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/CoachResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /coaches/{coach}:
+    parameters:
+      - $ref: '#/components/parameters/CoachId'
+    get:
+      tags: [Coaches]
+      operationId: getCoach
+      summary: Jedan trener
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      responses:
+        '200':
+          $ref: '#/components/responses/CoachResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Coaches]
+      operationId: updateCoach
+      summary: Izmjena trenera
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CoachInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/CoachResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Coaches]
+      operationId: deleteCoach
+      summary: Brisanje trenera
+      description: |
+        Blokirano ako je trener upisan na utakmicu (`409 resource_in_use`).
+
+        **Uloga:** admin
+      x-roles: [admin]
+      responses:
+        '204':
+          description: Obrisano
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/ResourceInUse'
+
+  # ---------------------------------------------------------------- Referees
+  /referees:
+    get:
+      tags: [Referees]
+      operationId: listReferees
+      summary: Popis sudaca
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
+      responses:
+        '200':
+          description: Popis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefereeList'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Referees]
+      operationId: createReferee
+      summary: Novi sudac
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefereeInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/RefereeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /referees/{referee}:
+    parameters:
+      - $ref: '#/components/parameters/RefereeId'
+    get:
+      tags: [Referees]
+      operationId: getReferee
+      summary: Jedan sudac
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      responses:
+        '200':
+          $ref: '#/components/responses/RefereeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Referees]
+      operationId: updateReferee
+      summary: Izmjena suca
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefereeInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/RefereeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Referees]
+      operationId: deleteReferee
+      summary: Brisanje suca
+      description: |
+        Blokirano ako je sudac dodijeljen utakmici (`409 resource_in_use`).
+
+        **Uloga:** admin
+      x-roles: [admin]
+      responses:
+        '204':
+          description: Obrisano
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/ResourceInUse'
+
+  # ---------------------------------------------------------------- Venues
+  /venues:
+    get:
+      tags: [Venues]
+      operationId: listVenues
+      summary: Popis dvorana
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/Search'
+      responses:
+        '200':
+          description: Popis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VenueList'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Venues]
+      operationId: createVenue
+      summary: Nova dvorana
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VenueInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/VenueResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /venues/{venue}:
+    parameters:
+      - $ref: '#/components/parameters/VenueId'
+    get:
+      tags: [Venues]
+      operationId: getVenue
+      summary: Jedna dvorana
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      responses:
+        '200':
+          $ref: '#/components/responses/VenueResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Venues]
+      operationId: updateVenue
+      summary: Izmjena dvorane
+      description: |
+        **Uloga:** admin
+      x-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VenueInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/VenueResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Venues]
+      operationId: deleteVenue
+      summary: Brisanje dvorane
+      description: |
+        Blokirano ako je dvorana dodijeljena utakmici (`409 resource_in_use`).
+
+        **Uloga:** admin
+      x-roles: [admin]
+      responses:
+        '204':
+          description: Obrisano
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/ResourceInUse'
+
+  # ---------------------------------------------------------------- Matches
+  /matches:
+    get:
+      tags: [Matches]
+      operationId: listMatches
+      summary: Raspored utakmica / popis zapisnika
+      description: |
+        - **admin:** sve utakmice saveza, s filtrima (raspored W-15, popis zapisnika W-17
+          s `status=finished,submitted`).
+        - **scorer:** samo utakmice dodijeljene prijavljenom zapisničaru (T-02);
+          filtri vrijede i ovdje.
+
+        Zadano sortiranje je po datumu (`scheduled_at`) uzlazno.
+
+        **Uloga:** admin, scorer
+      x-roles: [admin, scorer]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - $ref: '#/components/parameters/LeagueFilter'
+        - $ref: '#/components/parameters/SeasonFilter'
+        - name: league_edition_id
+          in: query
+          schema:
+            type: integer
+        - name: round
+          in: query
+          description: Kolo
+          schema:
+            type: integer
+        - $ref: '#/components/parameters/ClubFilter'
+        - name: date_from
+          in: query
+          description: Od datuma (uključivo)
+          schema:
+            type: string
+            format: date
+          example: '2026-11-01'
+        - name: date_to
+          in: query
+          description: Do datuma (uključivo)
+          schema:
+            type: string
+            format: date
+          example: '2026-11-30'
+        - name: status
+          in: query
+          description: Jedan ili više statusa odvojenih zarezom
+          schema:
+            type: string
+          example: finished,submitted
+        - name: sort
+          in: query
+          description: Polje sortiranja; `-` ispred za silazno
+          schema:
+            type: string
+            enum: [scheduled_at, -scheduled_at, round, -round]
+            default: scheduled_at
+      responses:
+        '200':
+          description: Popis utakmica
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MatchList'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Matches]
+      operationId: createMatch
+      summary: Nova utakmica
+      description: |
+        - `match_number` je jedinstven unutar izdanja lige.
+        - Domaćin i gost moraju biti prijavljeni u izdanje lige, različiti i iste
+          kategorije kao liga.
+        - Suci moraju biti različite osobe; `scorer_id` mora biti aktivan račun s
+          ulogom `scorer`.
+        - Nova utakmica dobiva status `scheduled`.
+
+        **Uloga:** admin
+      x-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MatchCreateInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/MatchResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          description: Validacija
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: Podaci nisu ispravni.
+                code: validation_error
+                errors:
+                  match_number:
+                    - Broj utakmice već postoji u ovom izdanju lige.
+                  away_team_id:
+                    - Gost mora biti različit od domaćina.
+
+  /matches/{match}:
+    parameters:
+      - $ref: '#/components/parameters/MatchId'
+    get:
+      tags: [Matches]
+      operationId: getMatch
+      summary: Podaci o utakmici (zaglavlje)
+      description: |
+        Zaglavlje utakmice: ekipe, natjecanje, kolo i broj, termin, dvorana, suci,
+        zapisničar i ostalo osoblje. Zapisničar vidi samo svoje utakmice.
+
+        **Uloga:** admin, scorer (samo dodijeljene)
+      x-roles: [admin, scorer]
+      responses:
+        '200':
+          $ref: '#/components/responses/MatchResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Matches]
+      operationId: updateMatch
+      summary: Izmjena utakmice i dodjela osoblja
+      description: |
+        Šalju se samo polja koja se mijenjaju.
+
+        - Dok je status `scheduled` mogu se mijenjati sva polja.
+        - Nakon početka (`in_progress` i kasnije) zaključani su `league_edition_id`,
+          `match_number`, `round`, `home_team_id`, `away_team_id`, `scheduled_at`
+          i `scorer_id` (`409 match_locked_fields`).
+        - Dvorana, suci i volonteri mogu se mijenjati dok utakmica nije predana.
+          **(pretpostavka)**
+        - Predana utakmica (`submitted`) ne može se mijenjati.
+
+        **Uloga:** admin
+      x-roles: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MatchUpdateInput'
+            example:
+              venue_id: 3
+              crew_chief_id: 5
+              umpire_1_id: 8
+              umpire_2_id: 9
+              scorer_id: 12
+              assistant_scorer: Marko Horvat
+              timer: Ana Kovač
+              shot_clock_operator: Petra Novak
+      responses:
+        '200':
+          $ref: '#/components/responses/MatchResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Polje je zaključano u trenutnom statusu
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: Nakon početka utakmice ekipe i termin se ne mogu mijenjati.
+                code: match_locked_fields
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Matches]
+      operationId: deleteMatch
+      summary: Brisanje utakmice
+      description: |
+        Moguće samo dok je status `scheduled` i utakmica nema zapisanih događaja.
+
+        **Uloga:** admin
+      x-roles: [admin]
+      responses:
+        '204':
+          description: Obrisano
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Utakmica je započela ili ima događaje
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: Utakmica ima zapisane događaje i ne može se obrisati.
+                code: match_has_events
+
+  /matches/{match}/scoresheet:
+    parameters:
+      - $ref: '#/components/parameters/MatchId'
+    get:
+      tags: [Matches]
+      operationId: getMatchScoresheet
+      summary: Sadržaj zapisnika (za prikaz na webu)
+      description: |
+        Sve što je na zapisniku u jednom odgovoru: zaglavlje, sastavi, treneri i
+        izvedeno stanje (faulovi, timeouti, running score, rezultat po četvrtinama).
+        Poništeni događaji ne ulaze u prikaz. Samo za čitanje (W-18).
+
+        **Uloga:** admin, scorer (samo dodijeljene)
+      x-roles: [admin, scorer]
+      responses:
+        '200':
+          description: Zapisnik
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Scoresheet'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ---------------------------------------------------------------- Match preparation
+  /matches/{match}/available-players:
+    parameters:
+      - $ref: '#/components/parameters/MatchId'
+      - $ref: '#/components/parameters/TeamQuery'
+    get:
+      tags: [Match preparation]
+      operationId: listAvailablePlayers
+      summary: Igrači iz kadra koji se mogu prijaviti na utakmicu
+      description: |
+        Kadar selekcije (`team`) za sezonu u kojoj se igra utakmica.
+
+        **Uloga:** scorer (samo dodijeljene), admin
+      x-roles: [scorer, admin]
+      responses:
+        '200':
+          description: Igrači iz kadra
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Player'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /matches/{match}/available-coaches:
+    parameters:
+      - $ref: '#/components/parameters/MatchId'
+      - $ref: '#/components/parameters/TeamQuery'
+    get:
+      tags: [Match preparation]
+      operationId: listAvailableCoaches
+      summary: Treneri kluba ekipe koji se mogu upisati na utakmicu
+      description: |
+        **Uloga:** scorer (samo dodijeljene), admin
+      x-roles: [scorer, admin]
+      responses:
+        '200':
+          description: Treneri kluba
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Coach'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /matches/{match}/lineups:
+    parameters:
+      - $ref: '#/components/parameters/MatchId'
+    get:
+      tags: [Match preparation]
+      operationId: listLineups
+      summary: Sastavi obje ekipe
+      description: |
+        **Uloga:** scorer (samo dodijeljene), admin
+      x-roles: [scorer, admin]
+      responses:
+        '200':
+          description: Sastavi domaćina i gosta
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [home, away]
+                    properties:
+                      home:
+                        $ref: '#/components/schemas/Lineup'
+                      away:
+                        $ref: '#/components/schemas/Lineup'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /matches/{match}/lineups/{team}:
+    parameters:
+      - $ref: '#/components/parameters/MatchId'
+      - $ref: '#/components/parameters/TeamPath'
+    put:
+      tags: [Match preparation]
+      operationId: replaceLineup
+      summary: Prijava sastava ekipe (zamjenjuje cijeli sastav)
+      description: |
+        - Igrači moraju biti iz kadra te selekcije za sezonu utakmice.
+        - `jersey_number` jedinstven unutar ekipe.
+        - Točno jedan kapetan (`is_captain`) i točno pet igrača u prvoj petorci (`is_starter`).
+        - Najviše 12 igrača **(pretpostavka, potvrditi sa savezom)**.
+        - Moguće samo dok je status `scheduled` (`409 match_already_started`).
+
+        **Uloga:** scorer (samo dodijeljene)
+      x-roles: [scorer]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LineupInput'
+      responses:
+        '200':
+          description: Sastav spremljen
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Lineup'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/MatchAlreadyStarted'
+        '422':
+          description: Validacija sastava
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: Podaci nisu ispravni.
+                code: validation_error
+                errors:
+                  players.3.jersey_number:
+                    - Broj dresa 7 već je zauzet u ovoj ekipi.
+                  players:
+                    - Prva petorka mora imati točno 5 igrača.
+
+  /matches/{match}/coaches:
+    parameters:
+      - $ref: '#/components/parameters/MatchId'
+    get:
+      tags: [Match preparation]
+      operationId: listMatchCoaches
+      summary: Treneri obje ekipe na utakmici
+      description: |
+        **Uloga:** scorer (samo dodijeljene), admin
+      x-roles: [scorer, admin]
+      responses:
+        '200':
+          description: Treneri domaćina i gosta
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [home, away]
+                    properties:
+                      home:
+                        $ref: '#/components/schemas/MatchCoaches'
+                      away:
+                        $ref: '#/components/schemas/MatchCoaches'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /matches/{match}/coaches/{team}:
+    parameters:
+      - $ref: '#/components/parameters/MatchId'
+      - $ref: '#/components/parameters/TeamPath'
+    put:
+      tags: [Match preparation]
+      operationId: replaceMatchCoaches
+      summary: Upis glavnog i pomoćnog trenera ekipe
+      description: |
+        - Glavni trener je obavezan, pomoćni opcionalan.
+        - Oba moraju biti treneri kluba te ekipe i različite osobe.
+        - Moguće samo dok je status `scheduled`.
+
+        **Uloga:** scorer (samo dodijeljene)
+      x-roles: [scorer]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MatchCoachesInput'
+      responses:
+        '200':
+          description: Treneri spremljeni
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/MatchCoaches'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/MatchAlreadyStarted'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /matches/{match}/start:
+    parameters:
+      - $ref: '#/components/parameters/MatchId'
+    post:
+      tags: [Match preparation]
+      operationId: startMatch
+      summary: Početak utakmice
+      description: |
+        - Moguće tek kad obje ekipe imaju sastav s petorkom i glavnog trenera
+          (`409 match_not_ready`).
+        - Status postaje `in_progress`, trenutna četvrtina je 1.
+        - Utakmica se zaključava na token (uređaj) koji ju je započeo. Svi daljnji
+          upisi s drugog tokena vraćaju `409 match_locked`.
+
+        **Uloga:** scorer (samo dodijeljene)
+      x-roles: [scorer]
+      responses:
+        '200':
+          $ref: '#/components/responses/MatchResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Utakmica nije spremna ili je već započela
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                not_ready:
+                  value:
+                    message: Gostujuća ekipa nema upisanog glavnog trenera.
+                    code: match_not_ready
+                started:
+                  value:
+                    message: Utakmica je već započela.
+                    code: match_already_started
+
+  # ---------------------------------------------------------------- Match events
+  /matches/{match}/events:
+    parameters:
+      - $ref: '#/components/parameters/MatchId'
+    get:
+      tags: [Match events]
+      operationId: listMatchEvents
+      summary: Povijest događaja (uključujući poništene)
+      description: |
+        Svi događaji utakmice poredani po `sequence`, bez paginacije. Poništeni
+        događaji imaju `is_undone: true`.
+
+        **Uloga:** scorer (samo dodijeljene), admin
+      x-roles: [scorer, admin]
+      parameters:
+        - name: include_undone
+          in: query
+          description: Uključi poništene događaje
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: Događaji
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Event'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [Match events]
+      operationId: createMatchEvent
+      summary: Zapis događaja utakmice
+      description: |
+        Klijent generira `id` (UUID v4). **Idempotentno:**
+        - isti `id` s istim sadržajem vraća postojeći događaj sa statusom `200`;
+        - isti `id` s drugačijim sadržajem vraća `409 event_id_conflict`.
+
+        Utakmica mora biti `in_progress`, a zahtjev mora doći s tokena koji je
+        započeo utakmicu. Server dodjeljuje `sequence` (redni broj).
+
+        ### Obavezna polja po tipu
+        | `type` | `team` | `player_id` | `player_out_id` | `coach_id` | `minute` |
+        |---|---|---|---|---|---|
+        | `score_1`, `score_2`, `score_3` | da | da (na terenu) | - | - | - |
+        | `foul_personal`, `foul_technical`, `foul_unsportsmanlike` | da | da (na terenu) | - | - | - |
+        | `foul_disqualifying` | da | da **ili** `coach_id` | - | da **ili** `player_id` | - |
+        | `foul_coach_technical` (C), `foul_bench_technical` (B) | da | - | - | da | - |
+        | `substitution` | da | da (ulazi, s klupe) | da (izlazi, s terena) | - | - |
+        | `timeout` | da | - | - | - | da (1-10) |
+        | `hcc` | da | - | - | - | opcionalno |
+        | `quarter_end` | - | - | - | - | - |
+
+        `player_id` i `coach_id` nikad nisu istovremeno popunjeni.
+        `quarter` mora biti jednak trenutnoj četvrtini (5 i više = produžeci).
+
+        ### Pravila igre (server, `409`)
+        - Igrač s 5 faulova ili diskvalificirajućim faulom je isključen i ne može
+          ni zabilježiti događaj ni ući u igru (`player_disqualified`).
+        - Koš i faul igrača samo za igrača na terenu (`player_not_on_court`).
+        - Limit timeouta **(pravilo po poluvremenima potvrditi)** (`timeout_limit_reached`).
+        - Isključenje trenera prema pravilniku **(potvrditi)** (`coach_disqualified`).
+        - Nakon `quarter_end` 4. četvrtine ili produžetka nova četvrtina počinje samo
+          ako je rezultat izjednačen; inače se utakmica može samo završiti
+          (`match_must_finish`).
+
+        **Uloga:** scorer (samo dodijeljene)
+      x-roles: [scorer]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventInput'
+            examples:
+              score:
+                summary: Koš za 2 boda
+                value:
+                  id: 3f1c2a8e-7b4d-4e0a-9c55-0b6f1d2e3a41
+                  type: score_2
+                  team: home
+                  player_id: 101
+                  quarter: 1
+              personal_foul:
+                summary: Osobni faul igrača
+                value:
+                  id: 8a2b9c1d-3e4f-4a5b-8c6d-7e8f9a0b1c2d
+                  type: foul_personal
+                  team: away
+                  player_id: 214
+                  quarter: 2
+              coach_technical:
+                summary: Tehnička greška trenera (C)
+                value:
+                  id: 0c9d8e7f-6a5b-4c3d-9e2f-1a0b9c8d7e6f
+                  type: foul_coach_technical
+                  team: home
+                  coach_id: 7
+                  quarter: 3
+              substitution:
+                summary: Zamjena
+                value:
+                  id: 5d4c3b2a-1f0e-4d9c-8b7a-6f5e4d3c2b1a
+                  type: substitution
+                  team: home
+                  player_id: 108
+                  player_out_id: 101
+                  quarter: 2
+              timeout:
+                summary: Timeout u 7. minuti
+                value:
+                  id: 9e8d7c6b-5a4f-4e3d-a2c1-b0a9f8e7d6c5
+                  type: timeout
+                  team: away
+                  quarter: 4
+                  minute: 7
+              quarter_end:
+                summary: Kraj četvrtine
+                value:
+                  id: 1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d
+                  type: quarter_end
+                  quarter: 1
+      responses:
+        '201':
+          description: Događaj zapisan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventCreatedResponse'
+        '200':
+          description: Događaj s tim `id` već postoji (ponovljeni zahtjev), vraća se postojeći
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventCreatedResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Događaj nije dopušten u trenutnom stanju utakmice
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                not_in_progress:
+                  value:
+                    message: Utakmica nije u tijeku.
+                    code: match_not_in_progress
+                locked:
+                  value:
+                    message: Utakmicu vodi drugi uređaj.
+                    code: match_locked
+                disqualified:
+                  value:
+                    message: Igrač broj 7 je isključen.
+                    code: player_disqualified
+                not_on_court:
+                  value:
+                    message: Igrač broj 12 nije na terenu.
+                    code: player_not_on_court
+                timeouts:
+                  value:
+                    message: Ekipa je iskoristila sve timeoute.
+                    code: timeout_limit_reached
+                id_conflict:
+                  value:
+                    message: Događaj s ovim ID-jem već postoji s drugačijim podacima.
+                    code: event_id_conflict
+        '422':
+          description: Validacija (nedostaju ili su suvišna polja za tip)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: Podaci nisu ispravni.
+                code: validation_error
+                errors:
+                  minute:
+                    - Minuta je obavezna za timeout i mora biti između 1 i 10.
+
+  /matches/{match}/events/{event}/undo:
+    parameters:
+      - $ref: '#/components/parameters/MatchId'
+      - $ref: '#/components/parameters/EventId'
+    post:
+      tags: [Match events]
+      operationId: undoMatchEvent
+      summary: Poništavanje događaja
+      description: |
+        Događaj se ne briše, nego dobiva `is_undone: true`. Može se poništiti zadnji
+        ili bilo koji raniji događaj. Ponovno poništavanje već poništenog događaja
+        vraća `200` bez promjene (idempotentno).
+
+        Moguće dok je utakmica `in_progress` ili `finished`; nakon predaje
+        (`submitted`) vraća `409 match_submitted`. **(pretpostavka: poništavanje je
+        dopušteno i u statusu `finished`)**
+
+        Ako bi poništavanje dovelo do nedosljednog stanja (npr. poništavanje zamjene
+        nakon koje je igrač koji je ušao zabilježio koš), vraća se
+        `409 undo_not_allowed`. **(pretpostavka)**
+
+        **Uloga:** scorer (samo dodijeljene)
+      x-roles: [scorer]
+      responses:
+        '200':
+          description: Događaj poništen; vraća se ažurirano stanje
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventCreatedResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Poništavanje nije dopušteno
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                submitted:
+                  value:
+                    message: Zapisnik je predan i ne može se mijenjati.
+                    code: match_submitted
+                locked:
+                  value:
+                    message: Utakmicu vodi drugi uređaj.
+                    code: match_locked
+
+  /matches/{match}/state:
+    parameters:
+      - $ref: '#/components/parameters/MatchId'
+    get:
+      tags: [Match events]
+      operationId: getMatchState
+      summary: Izvedeno stanje utakmice
+      description: |
+        Sve vrijednosti izračunate su iz neponištenih događaja: rezultat, rezultat po
+        četvrtinama, running score, faulovi igrača i trenera, ekipni faulovi u
+        trenutnoj četvrtini, bonus, timeouti, igrači na terenu i trenutna četvrtina.
+
+        **Uloga:** scorer (samo dodijeljene), admin
+      x-roles: [scorer, admin]
+      responses:
+        '200':
+          description: Stanje utakmice
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/MatchState'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ---------------------------------------------------------------- Match closing
+  /matches/{match}/finish:
+    parameters:
+      - $ref: '#/components/parameters/MatchId'
+    post:
+      tags: [Match closing]
+      operationId: finishMatch
+      summary: Završetak utakmice
+      description: |
+        - Moguće nakon `quarter_end` zadnje četvrtine ili produžetka, kad rezultat nije
+          izjednačen (`409 match_cannot_finish`).
+        - Zapisničar potvrđuje ili ispravlja vrijeme završetka (`ended_at`); ako se ne
+          pošalje, uzima se trenutno vrijeme servera.
+        - Status postaje `finished`; novi događaji više nisu mogući.
+
+        **Uloga:** scorer (samo dodijeljene)
+      x-roles: [scorer]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FinishInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/MatchResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Utakmica se još ne može završiti
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                quarter_open:
+                  value:
+                    message: Zadnja četvrtina nije završena.
+                    code: match_cannot_finish
+                tied:
+                  value:
+                    message: Rezultat je izjednačen, igra se produžetak.
+                    code: match_cannot_finish
+                locked:
+                  value:
+                    message: Utakmicu vodi drugi uređaj.
+                    code: match_locked
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /matches/{match}/submit:
+    parameters:
+      - $ref: '#/components/parameters/MatchId'
+    post:
+      tags: [Match closing]
+      operationId: submitMatch
+      summary: Predaja zapisnika
+      description: |
+        - Utakmica mora biti `finished` (`409 match_not_finished`).
+        - Provjeravaju se obavezni podaci (sastavi, rezultat, završetak).
+        - Uz predaju se bilježi protest (`protest`, `protest_note`).
+        - Status postaje `submitted`. Server generira i pohranjuje PDF, koji se
+          nakon toga ne mijenja.
+        - Nakon predaje zapisnik se ne može mijenjati
+          **(smije li se ispravljati nakon predaje, potvrditi sa savezom)**.
+
+        **Uloga:** scorer (samo dodijeljene)
+      x-roles: [scorer]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitInput'
+            example:
+              protest: true
+              protest_note: Gostujuća ekipa ulaže protest zbog neispravnog sata za napad.
+      responses:
+        '200':
+          $ref: '#/components/responses/MatchResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Utakmica nije završena ili je već predana
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                not_finished:
+                  value:
+                    message: Utakmica nije završena.
+                    code: match_not_finished
+                submitted:
+                  value:
+                    message: Zapisnik je već predan.
+                    code: match_submitted
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /matches/{match}/report.pdf:
+    parameters:
+      - $ref: '#/components/parameters/MatchId'
+    get:
+      tags: [Match closing]
+      operationId: getMatchReportPdf
+      summary: PDF zapisnik (službeni obrazac)
+      description: |
+        PDF prema službenom obrascu (HKS). Ne sadrži poništene događaje.
+        - `submitted`: vraća se pohranjeni PDF.
+        - `finished`: PDF se generira na zahtjev kao pregled prije predaje.
+          **(pretpostavka)**
+        - Ostali statusi: `409 report_not_available`.
+
+        **Uloga:** admin, scorer (samo dodijeljene)
+      x-roles: [admin, scorer]
+      responses:
+        '200':
+          description: PDF datoteka
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              example: attachment; filename="zapisnik-1-U15-2026-11-14.pdf"
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Zapisnik još nije dostupan
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                message: Zapisnik je dostupan tek nakon završetka utakmice.
+                code: report_not_available
+
+# ====================================================================== COMPONENTS
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Laravel Sanctum token iz `POST /auth/login`
+
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PerPage:
+      name: per_page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 25
+    Search:
+      name: search
+      in: query
+      description: Pretraga po nazivu / imenu
+      schema:
+        type: string
+    CategoryFilter:
+      name: category_id
+      in: query
+      schema:
+        type: integer
+    SeasonFilter:
+      name: season_id
+      in: query
+      schema:
+        type: integer
+    LeagueFilter:
+      name: league_id
+      in: query
+      schema:
+        type: integer
+    ClubFilter:
+      name: club_id
+      in: query
+      schema:
+        type: integer
+    UserId:
+      name: user
+      in: path
+      required: true
+      schema:
+        type: integer
+    SeasonId:
+      name: season
+      in: path
+      required: true
+      schema:
+        type: integer
+    CategoryId:
+      name: category
+      in: path
+      required: true
+      schema:
+        type: integer
+    LeagueId:
+      name: league
+      in: path
+      required: true
+      schema:
+        type: integer
+    LeagueEditionId:
+      name: league_edition
+      in: path
+      required: true
+      schema:
+        type: integer
+    ClubId:
+      name: club
+      in: path
+      required: true
+      schema:
+        type: integer
+    ClubTeamId:
+      name: club_team
+      in: path
+      required: true
+      schema:
+        type: integer
+    PlayerId:
+      name: player
+      in: path
+      required: true
+      schema:
+        type: integer
+    CoachId:
+      name: coach
+      in: path
+      required: true
+      schema:
+        type: integer
+    RefereeId:
+      name: referee
+      in: path
+      required: true
+      schema:
+        type: integer
+    VenueId:
+      name: venue
+      in: path
+      required: true
+      schema:
+        type: integer
+    MatchId:
+      name: match
+      in: path
+      required: true
+      schema:
+        type: integer
+    EventId:
+      name: event
+      in: path
+      required: true
+      description: UUID događaja
+      schema:
+        type: string
+        format: uuid
+    TeamPath:
+      name: team
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/TeamSide'
+    TeamQuery:
+      name: team
+      in: query
+      required: true
+      schema:
+        $ref: '#/components/schemas/TeamSide'
+
+  responses:
+    Unauthenticated:
+      description: Nije prijavljen ili je token neispravan
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            message: Niste prijavljeni.
+            code: unauthenticated
+    Forbidden:
+      description: Uloga nema ovlasti (ili zapisničar nije dodijeljen utakmici)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            message: Nemate ovlasti za ovu radnju.
+            code: forbidden
+    NotFound:
+      description: Resurs ne postoji (ili pripada drugom savezu)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            message: Traženi zapis ne postoji.
+            code: not_found
+    ResourceInUse:
+      description: Zapis je u upotrebi i ne može se obrisati
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            message: Zapis se koristi i ne može se obrisati.
+            code: resource_in_use
+    MatchAlreadyStarted:
+      description: Utakmica je već započela
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            message: Utakmica je već započela, sastav se ne može mijenjati.
+            code: match_already_started
+    ValidationError:
+      description: Validacija nije prošla
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            message: Podaci nisu ispravni.
+            code: validation_error
+            errors:
+              name:
+                - Naziv je obavezan.
+    SeasonResponse:
+      description: Sezona
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data:
+                $ref: '#/components/schemas/Season'
+    CategoryResponse:
+      description: Kategorija
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data:
+                $ref: '#/components/schemas/Category'
+    LeagueResponse:
+      description: Liga
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data:
+                $ref: '#/components/schemas/League'
+    LeagueEditionResponse:
+      description: Izdanje lige
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data:
+                $ref: '#/components/schemas/LeagueEdition'
+    ClubResponse:
+      description: Klub
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data:
+                $ref: '#/components/schemas/Club'
+    ClubTeamResponse:
+      description: Selekcija
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data:
+                $ref: '#/components/schemas/ClubTeam'
+    PlayerResponse:
+      description: Igrač
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data:
+                $ref: '#/components/schemas/Player'
+    CoachResponse:
+      description: Trener
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data:
+                $ref: '#/components/schemas/Coach'
+    RefereeResponse:
+      description: Sudac
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data:
+                $ref: '#/components/schemas/Referee'
+    VenueResponse:
+      description: Dvorana
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data:
+                $ref: '#/components/schemas/Venue'
+    MatchResponse:
+      description: Utakmica
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data:
+                $ref: '#/components/schemas/Match'
+
+  schemas:
+    # ------------------------------------------------ common
+    Error:
+      type: object
+      required: [message, code]
+      properties:
+        message:
+          type: string
+          description: Poruka na hrvatskom, prikladna za prikaz korisniku
+          example: Podaci nisu ispravni.
+        code:
+          type: string
+          description: Strojno čitljiv kod greške
+          example: validation_error
+        errors:
+          type: object
+          description: Samo kod validacije (`422`); ključ je naziv polja
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          example:
+            name:
+              - Naziv je obavezan.
+    PaginationMeta:
+      type: object
+      required: [page, per_page, total, last_page]
+      properties:
+        page:
+          type: integer
+          example: 1
+        per_page:
+          type: integer
+          example: 25
+        total:
+          type: integer
+          example: 42
+        last_page:
+          type: integer
+          example: 2
+    IdName:
+      type: object
+      description: Skraćeni prikaz povezanog zapisa
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: U15
+    TeamSide:
+      type: string
+      description: Ekipa A (domaćin) ili ekipa B (gost)
+      enum: [home, away]
+    Role:
+      type: string
+      enum: [admin, scorer, super_admin]
+
+    # ------------------------------------------------ auth / users
+    LoginRequest:
+      type: object
+      required: [username, password, device_name, client]
+      properties:
+        username:
+          type: string
+          example: ivan.zapisnicar
+        password:
+          type: string
+          format: password
+          example: tajna-lozinka
+        device_name:
+          type: string
+          description: Naziv uređaja, sprema se uz token
+          example: Samsung Tab A8
+        client:
+          type: string
+          enum: [web, tablet]
+          description: Klijent s kojeg se korisnik prijavljuje **(pretpostavka)**
+    LoginResponse:
+      type: object
+      required: [token, token_type, user]
+      properties:
+        token:
+          type: string
+          example: 3|Xk9vY2hAbC1kZWYtZ2hp...
+        token_type:
+          type: string
+          example: Bearer
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Istek tokena (null ako ne ističe) **(trajanje sesije potvrditi)**
+          example: '2026-11-06T08:00:00Z'
+        user:
+          $ref: '#/components/schemas/AuthUser'
+    AuthUser:
+      type: object
+      required: [id, username, role]
+      properties:
+        id:
+          type: integer
+          example: 12
+        username:
+          type: string
+          example: ivan.zapisnicar
+        role:
+          $ref: '#/components/schemas/Role'
+        federation:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/IdName'
+          nullable: true
+          description: Savez korisnika (null za super_admin)
+          example:
+            id: 1
+            name: Košarkaški savez Varaždinske županije
+    User:
+      type: object
+      required: [id, username, role, is_active, created_at]
+      properties:
+        id:
+          type: integer
+          example: 12
+        username:
+          type: string
+          example: ivan.zapisnicar
+        role:
+          type: string
+          enum: [scorer]
+        is_active:
+          type: boolean
+          example: true
+        created_at:
+          type: string
+          format: date-time
+          example: '2026-10-01T10:00:00Z'
+    UserCreated:
+      allOf:
+        - $ref: '#/components/schemas/User'
+        - type: object
+          required: [initial_password]
+          properties:
+            initial_password:
+              type: string
+              description: Početna lozinka; vraća se samo pri kreiranju
+              example: Plava-Lopta-42
+    UserCreateInput:
+      type: object
+      required: [username]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 50
+          example: ivan.zapisnicar
+        password:
+          type: string
+          format: password
+          minLength: 8
+          description: Ako se izostavi, sustav generira lozinku
+          example: Plava-Lopta-42
+    UserUpdateInput:
+      type: object
+      required: [is_active]
+      properties:
+        is_active:
+          type: boolean
+          example: false
+    UserList:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # ------------------------------------------------ seasons
+    Season:
+      type: object
+      required: [id, name, start_year, end_year]
+      properties:
+        id:
+          type: integer
+          example: 3
+        name:
+          type: string
+          example: 2026./2027.
+        start_year:
+          type: integer
+          example: 2026
+        end_year:
+          type: integer
+          example: 2027
+    SeasonInput:
+      type: object
+      required: [name, start_year, end_year]
+      properties:
+        name:
+          type: string
+          maxLength: 50
+          example: 2026./2027.
+        start_year:
+          type: integer
+          example: 2026
+        end_year:
+          type: integer
+          description: Ne smije biti manji od `start_year`
+          example: 2027
+    SeasonList:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Season'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # ------------------------------------------------ categories
+    Category:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+          example: 3
+        name:
+          type: string
+          example: U15
+        max_age:
+          type: integer
+          nullable: true
+          description: Najveća dob (null za seniore)
+          example: 15
+    CategoryInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          maxLength: 50
+          example: U15
+        max_age:
+          type: integer
+          nullable: true
+          minimum: 1
+          example: 15
+    CategoryList:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Category'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # ------------------------------------------------ leagues
+    League:
+      type: object
+      required: [id, name, category]
+      properties:
+        id:
+          type: integer
+          example: 2
+        name:
+          type: string
+          example: 1. županijska liga U15
+        category:
+          $ref: '#/components/schemas/IdName'
+    LeagueInput:
+      type: object
+      required: [name, category_id]
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          example: 1. županijska liga U15
+        category_id:
+          type: integer
+          example: 3
+    LeagueList:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/League'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # ------------------------------------------------ league editions
+    LeagueEdition:
+      type: object
+      required: [id, league, season, category]
+      properties:
+        id:
+          type: integer
+          example: 7
+        league:
+          $ref: '#/components/schemas/IdName'
+        season:
+          $ref: '#/components/schemas/IdName'
+        category:
+          $ref: '#/components/schemas/IdName'
+        teams_count:
+          type: integer
+          example: 8
+    LeagueEditionInput:
+      type: object
+      required: [league_id, season_id]
+      properties:
+        league_id:
+          type: integer
+          example: 2
+        season_id:
+          type: integer
+          example: 3
+    LeagueEditionTeamInput:
+      type: object
+      required: [club_team_id]
+      properties:
+        club_team_id:
+          type: integer
+          example: 15
+    LeagueEditionList:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/LeagueEdition'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # ------------------------------------------------ clubs
+    Club:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: integer
+          example: 4
+        name:
+          type: string
+          example: KK Varaždin
+    ClubInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          example: KK Varaždin
+    ClubList:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Club'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # ------------------------------------------------ club teams
+    ClubTeam:
+      type: object
+      required: [id, name, club, category]
+      properties:
+        id:
+          type: integer
+          example: 15
+        name:
+          type: string
+          example: KK Varaždin U15
+        club:
+          $ref: '#/components/schemas/IdName'
+        category:
+          $ref: '#/components/schemas/IdName'
+    ClubTeamInput:
+      type: object
+      required: [name, club_id, category_id]
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          example: KK Varaždin U15
+        club_id:
+          type: integer
+          example: 4
+        category_id:
+          type: integer
+          example: 3
+    ClubTeamList:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClubTeam'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    RosterEntryInput:
+      type: object
+      required: [player_id]
+      properties:
+        player_id:
+          type: integer
+          example: 101
+
+    # ------------------------------------------------ players
+    Player:
+      type: object
+      required: [id, first_name, last_name, date_of_birth, license_number, club]
+      properties:
+        id:
+          type: integer
+          example: 101
+        first_name:
+          type: string
+          example: Luka
+        last_name:
+          type: string
+          example: Babić
+        date_of_birth:
+          type: string
+          format: date
+          example: '2012-04-18'
+        license_number:
+          type: string
+          example: HKS-2012-04411
+        club:
+          $ref: '#/components/schemas/IdName'
+    PlayerInput:
+      type: object
+      required: [first_name, last_name, date_of_birth, license_number, club_id]
+      properties:
+        first_name:
+          type: string
+          maxLength: 100
+          example: Luka
+        last_name:
+          type: string
+          maxLength: 100
+          example: Babić
+        date_of_birth:
+          type: string
+          format: date
+          description: Ne smije biti u budućnosti
+          example: '2012-04-18'
+        license_number:
+          type: string
+          maxLength: 50
+          example: HKS-2012-04411
+        club_id:
+          type: integer
+          example: 4
+    PlayerList:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Player'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # ------------------------------------------------ coaches
+    Coach:
+      type: object
+      required: [id, first_name, last_name, license_number, club]
+      properties:
+        id:
+          type: integer
+          example: 7
+        first_name:
+          type: string
+          example: Ivan
+        last_name:
+          type: string
+          example: Kovačić
+        license_number:
+          type: string
+          example: HKS-T-0193
+        club:
+          $ref: '#/components/schemas/IdName'
+    CoachInput:
+      type: object
+      required: [first_name, last_name, license_number, club_id]
+      properties:
+        first_name:
+          type: string
+          maxLength: 100
+          example: Ivan
+        last_name:
+          type: string
+          maxLength: 100
+          example: Kovačić
+        license_number:
+          type: string
+          maxLength: 50
+          example: HKS-T-0193
+        club_id:
+          type: integer
+          example: 4
+    CoachList:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Coach'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # ------------------------------------------------ referees
+    Referee:
+      type: object
+      required: [id, first_name, last_name]
+      properties:
+        id:
+          type: integer
+          example: 5
+        first_name:
+          type: string
+          example: Tomislav
+        last_name:
+          type: string
+          example: Jurić
+    RefereeInput:
+      type: object
+      required: [first_name, last_name]
+      properties:
+        first_name:
+          type: string
+          maxLength: 100
+          example: Tomislav
+        last_name:
+          type: string
+          maxLength: 100
+          example: Jurić
+    RefereeList:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Referee'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # ------------------------------------------------ venues
+    Venue:
+      type: object
+      required: [id, name, city]
+      properties:
+        id:
+          type: integer
+          example: 3
+        name:
+          type: string
+          example: Gradska sportska dvorana
+        city:
+          type: string
+          example: Varaždin
+    VenueInput:
+      type: object
+      required: [name, city]
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          example: Gradska sportska dvorana
+        city:
+          type: string
+          maxLength: 100
+          example: Varaždin
+    VenueList:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Venue'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # ------------------------------------------------ matches
+    MatchStatus:
+      type: string
+      description: |
+        `scheduled` = Zakazana, `in_progress` = U tijeku, `finished` = Završena,
+        `submitted` = Predana
+      enum: [scheduled, in_progress, finished, submitted]
+    Score:
+      type: object
+      required: [home, away]
+      properties:
+        home:
+          type: integer
+          example: 68
+        away:
+          type: integer
+          example: 61
+    MatchSummary:
+      type: object
+      required: [id, match_number, league_edition, home_team, away_team, scheduled_at, status]
+      properties:
+        id:
+          type: integer
+          example: 42
+        match_number:
+          type: integer
+          example: 1
+        round:
+          type: integer
+          nullable: true
+          example: 3
+        league_edition:
+          $ref: '#/components/schemas/LeagueEdition'
+        home_team:
+          $ref: '#/components/schemas/ClubTeam'
+        away_team:
+          $ref: '#/components/schemas/ClubTeam'
+        scheduled_at:
+          type: string
+          format: date-time
+          example: '2026-11-14T17:00:00Z'
+        venue:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/Venue'
+          nullable: true
+        scorer:
+          type: object
+          nullable: true
+          required: [id, username]
+          properties:
+            id:
+              type: integer
+              example: 12
+            username:
+              type: string
+              example: ivan.zapisnicar
+        status:
+          $ref: '#/components/schemas/MatchStatus'
+        score:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/Score'
+          nullable: true
+          description: Rezultat izveden iz događaja (null dok utakmica nije započela)
+    Match:
+      allOf:
+        - $ref: '#/components/schemas/MatchSummary'
+        - type: object
+          properties:
+            crew_chief:
+              type: object
+              allOf:
+                - $ref: '#/components/schemas/Referee'
+              nullable: true
+              description: Glavni sudac (Crew chief)
+            umpire_1:
+              type: object
+              allOf:
+                - $ref: '#/components/schemas/Referee'
+              nullable: true
+            umpire_2:
+              type: object
+              allOf:
+                - $ref: '#/components/schemas/Referee'
+              nullable: true
+            assistant_scorer:
+              type: string
+              nullable: true
+              description: Pomoćni zapisničar (slobodan tekst)
+              example: Marko Horvat
+            timer:
+              type: string
+              nullable: true
+              description: Mjeritelj vremena (slobodan tekst)
+              example: Ana Kovač
+            shot_clock_operator:
+              type: string
+              nullable: true
+              description: Operater 24 s (slobodan tekst)
+              example: Petra Novak
+            started_at:
+              type: string
+              format: date-time
+              nullable: true
+              example: '2026-11-14T17:02:00Z'
+            ended_at:
+              type: string
+              format: date-time
+              nullable: true
+              example: '2026-11-14T18:31:00Z'
+            protest:
+              type: boolean
+              example: false
+            protest_note:
+              type: string
+              nullable: true
+              example: null
+    MatchCreateInput:
+      type: object
+      required: [league_edition_id, match_number, home_team_id, away_team_id, scheduled_at]
+      properties:
+        league_edition_id:
+          type: integer
+          example: 7
+        match_number:
+          type: integer
+          minimum: 1
+          example: 1
+        round:
+          type: integer
+          nullable: true
+          minimum: 1
+          example: 3
+        home_team_id:
+          type: integer
+          description: ID selekcije domaćina (club team)
+          example: 15
+        away_team_id:
+          type: integer
+          example: 18
+        scheduled_at:
+          type: string
+          format: date-time
+          example: '2026-11-14T17:00:00Z'
+        venue_id:
+          type: integer
+          nullable: true
+          example: 3
+        crew_chief_id:
+          type: integer
+          nullable: true
+          example: 5
+        umpire_1_id:
+          type: integer
+          nullable: true
+          example: 8
+        umpire_2_id:
+          type: integer
+          nullable: true
+          example: 9
+        scorer_id:
+          type: integer
+          nullable: true
+          description: Račun s ulogom `scorer`
+          example: 12
+        assistant_scorer:
+          type: string
+          nullable: true
+          example: Marko Horvat
+        timer:
+          type: string
+          nullable: true
+          example: Ana Kovač
+        shot_clock_operator:
+          type: string
+          nullable: true
+          example: Petra Novak
+    MatchUpdateInput:
+      type: object
+      description: Sva polja su opcionalna; šalju se samo ona koja se mijenjaju.
+      properties:
+        league_edition_id:
+          type: integer
+        match_number:
+          type: integer
+          minimum: 1
+        round:
+          type: integer
+          nullable: true
+        home_team_id:
+          type: integer
+        away_team_id:
+          type: integer
+        scheduled_at:
+          type: string
+          format: date-time
+        venue_id:
+          type: integer
+          nullable: true
+        crew_chief_id:
+          type: integer
+          nullable: true
+        umpire_1_id:
+          type: integer
+          nullable: true
+        umpire_2_id:
+          type: integer
+          nullable: true
+        scorer_id:
+          type: integer
+          nullable: true
+        assistant_scorer:
+          type: string
+          nullable: true
+        timer:
+          type: string
+          nullable: true
+        shot_clock_operator:
+          type: string
+          nullable: true
+    MatchList:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/MatchSummary'
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    # ------------------------------------------------ lineups & coaches
+    LineupPlayerInput:
+      type: object
+      required: [player_id, jersey_number]
+      properties:
+        player_id:
+          type: integer
+          example: 101
+        jersey_number:
+          type: integer
+          minimum: 0
+          maximum: 99
+          example: 7
+        is_captain:
+          type: boolean
+          default: false
+        is_starter:
+          type: boolean
+          default: false
+          description: U prvoj petorci
+    LineupInput:
+      type: object
+      required: [players]
+      properties:
+        players:
+          type: array
+          minItems: 5
+          maxItems: 12
+          items:
+            $ref: '#/components/schemas/LineupPlayerInput'
+      example:
+        players:
+          - { player_id: 101, jersey_number: 4, is_captain: true, is_starter: true }
+          - { player_id: 102, jersey_number: 5, is_captain: false, is_starter: true }
+          - { player_id: 103, jersey_number: 7, is_captain: false, is_starter: true }
+          - { player_id: 104, jersey_number: 9, is_captain: false, is_starter: true }
+          - { player_id: 105, jersey_number: 11, is_captain: false, is_starter: true }
+          - { player_id: 106, jersey_number: 12, is_captain: false, is_starter: false }
+          - { player_id: 107, jersey_number: 14, is_captain: false, is_starter: false }
+    LineupPlayer:
+      type: object
+      required: [player_id, first_name, last_name, license_number, jersey_number, is_captain, is_starter]
+      properties:
+        player_id:
+          type: integer
+          example: 101
+        first_name:
+          type: string
+          example: Luka
+        last_name:
+          type: string
+          example: Babić
+        license_number:
+          type: string
+          example: HKS-2012-04411
+        jersey_number:
+          type: integer
+          example: 4
+        is_captain:
+          type: boolean
+          example: true
+        is_starter:
+          type: boolean
+          example: true
+    Lineup:
+      type: object
+      required: [team, club_team, players]
+      properties:
+        team:
+          $ref: '#/components/schemas/TeamSide'
+        club_team:
+          $ref: '#/components/schemas/IdName'
+        players:
+          type: array
+          description: Prazno ako sastav još nije prijavljen
+          items:
+            $ref: '#/components/schemas/LineupPlayer'
+    MatchCoachesInput:
+      type: object
+      required: [head_coach_id]
+      properties:
+        head_coach_id:
+          type: integer
+          example: 7
+        assistant_coach_id:
+          type: integer
+          nullable: true
+          example: 9
+    MatchCoaches:
+      type: object
+      required: [team]
+      properties:
+        team:
+          $ref: '#/components/schemas/TeamSide'
+        head_coach:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/Coach'
+          nullable: true
+        assistant_coach:
+          type: object
+          allOf:
+            - $ref: '#/components/schemas/Coach'
+          nullable: true
+
+    # ------------------------------------------------ events
+    EventType:
+      type: string
+      description: |
+        | API | Baza (`vrsta_aktivnosti`) | Značenje |
+        |---|---|---|
+        | `score_1` | Kos_1 | Koš 1 bod |
+        | `score_2` | Kos_2 | Koš 2 boda |
+        | `score_3` | Kos_3 | Koš 3 boda |
+        | `foul_personal` | Osobna_P | Osobni faul (P) |
+        | `foul_technical` | Tehnicka_T | Tehnički faul igrača (T) |
+        | `foul_unsportsmanlike` | Nesportska_U | Nesportski faul (U) |
+        | `foul_disqualifying` | Diskvalifikacijska_D | Diskvalificirajući faul (D), igrač ili trener |
+        | `foul_coach_technical` | Tehnicka_C | Tehnički faul trenera (C) |
+        | `foul_bench_technical` | Tehnicka_B | Tehnički faul klupe (B), upisuje se treneru |
+        | `substitution` | Zamjena | Zamjena |
+        | `timeout` | Timeout | Timeout |
+        | `hcc` | HCC | Izazov trenera |
+        | `quarter_end` | Zavrsi_cetvrtinu | Kraj četvrtine / produžetka |
+      enum:
+        - score_1
+        - score_2
+        - score_3
+        - foul_personal
+        - foul_technical
+        - foul_unsportsmanlike
+        - foul_disqualifying
+        - foul_coach_technical
+        - foul_bench_technical
+        - substitution
+        - timeout
+        - hcc
+        - quarter_end
+    EventInput:
+      type: object
+      required: [id, type, quarter]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: UUID v4 koji generira klijent (idempotentnost)
+          example: 3f1c2a8e-7b4d-4e0a-9c55-0b6f1d2e3a41
+        type:
+          $ref: '#/components/schemas/EventType'
+        team:
+          type: string
+          allOf:
+            - $ref: '#/components/schemas/TeamSide'
+          nullable: true
+          description: Obavezno za sve tipove osim `quarter_end`
+        player_id:
+          type: integer
+          nullable: true
+          description: Igrač (kod zamjene igrač koji ulazi)
+          example: 101
+        player_out_id:
+          type: integer
+          nullable: true
+          description: Samo kod zamjene, igrač koji izlazi
+        coach_id:
+          type: integer
+          nullable: true
+          description: Trener (faulovi C, B i D trenera)
+        quarter:
+          type: integer
+          minimum: 1
+          description: 1-4, 5 i više su produžeci
+          example: 1
+        minute:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 10
+          description: Samo kod `timeout` (obavezno) i `hcc` (opcionalno)
+    Event:
+      type: object
+      required: [id, sequence, type, quarter, is_undone, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 3f1c2a8e-7b4d-4e0a-9c55-0b6f1d2e3a41
+        sequence:
+          type: integer
+          description: Redni broj unutar utakmice (dodjeljuje server)
+          example: 17
+        type:
+          $ref: '#/components/schemas/EventType'
+        team:
+          type: string
+          allOf:
+            - $ref: '#/components/schemas/TeamSide'
+          nullable: true
+        player_id:
+          type: integer
+          nullable: true
+          example: 101
+        player_out_id:
+          type: integer
+          nullable: true
+          example: null
+        coach_id:
+          type: integer
+          nullable: true
+          example: null
+        quarter:
+          type: integer
+          example: 1
+        minute:
+          type: integer
+          nullable: true
+          example: null
+        is_undone:
+          type: boolean
+          example: false
+        created_at:
+          type: string
+          format: date-time
+          example: '2026-11-14T17:06:12Z'
+    EventCreatedResponse:
+      type: object
+      description: Događaj i novo izvedeno stanje, da tablet ne mora posebno dohvaćati stanje
+      required: [data, state]
+      properties:
+        data:
+          $ref: '#/components/schemas/Event'
+        state:
+          $ref: '#/components/schemas/MatchState'
+
+    # ------------------------------------------------ derived state
+    FoulEntry:
+      type: object
+      required: [event_id, type, quarter]
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          description: Oznaka na zapisniku
+          enum: [P, T, U, D, C, B]
+          example: P
+        quarter:
+          type: integer
+          example: 2
+    PlayerState:
+      type: object
+      required: [player_id, jersey_number, first_name, last_name, points, fouls, foul_count, on_court, is_disqualified]
+      properties:
+        player_id:
+          type: integer
+          example: 101
+        jersey_number:
+          type: integer
+          example: 4
+        first_name:
+          type: string
+          example: Luka
+        last_name:
+          type: string
+          example: Babić
+        is_captain:
+          type: boolean
+          example: true
+        points:
+          type: integer
+          example: 14
+        fouls:
+          type: array
+          items:
+            $ref: '#/components/schemas/FoulEntry'
+        foul_count:
+          type: integer
+          example: 2
+        on_court:
+          type: boolean
+          example: true
+        is_disqualified:
+          type: boolean
+          description: Isključen (5 faulova ili D)
+          example: false
+    CoachState:
+      type: object
+      required: [coach_id, role, fouls, is_disqualified]
+      properties:
+        coach_id:
+          type: integer
+          example: 7
+        first_name:
+          type: string
+          example: Ivan
+        last_name:
+          type: string
+          example: Kovačić
+        role:
+          type: string
+          enum: [head, assistant]
+        fouls:
+          type: array
+          items:
+            $ref: '#/components/schemas/FoulEntry'
+        is_disqualified:
+          type: boolean
+          example: false
+    TimeoutEntry:
+      type: object
+      required: [event_id, number, quarter, minute]
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        number:
+          type: integer
+          description: Redni broj timeouta ekipe
+          example: 1
+        quarter:
+          type: integer
+          example: 2
+        minute:
+          type: integer
+          example: 7
+    TeamState:
+      type: object
+      required: [club_team, score, team_fouls_current_quarter, in_bonus, timeouts, timeouts_remaining, players, coaches]
+      properties:
+        club_team:
+          $ref: '#/components/schemas/IdName'
+        score:
+          type: integer
+          example: 34
+        team_fouls_current_quarter:
+          type: integer
+          example: 3
+        in_bonus:
+          type: boolean
+          description: Ekipa je u bonusu **(pravilo potvrditi)**
+          example: false
+        timeouts:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimeoutEntry'
+        timeouts_remaining:
+          type: integer
+          description: Preostali timeouti u trenutnom razdoblju **(pravilo potvrditi)**
+          example: 1
+        hcc:
+          type: array
+          description: Izazovi trenera (event_id, četvrtina, minuta)
+          items:
+            type: object
+            properties:
+              event_id:
+                type: string
+                format: uuid
+              quarter:
+                type: integer
+              minute:
+                type: integer
+                nullable: true
+        players:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlayerState'
+        coaches:
+          type: array
+          items:
+            $ref: '#/components/schemas/CoachState'
+    RunningScoreEntry:
+      type: object
+      required: [event_id, sequence, team, points, home_score, away_score, quarter]
+      properties:
+        event_id:
+          type: string
+          format: uuid
+        sequence:
+          type: integer
+          example: 17
+        team:
+          $ref: '#/components/schemas/TeamSide'
+        player_id:
+          type: integer
+          example: 101
+        jersey_number:
+          type: integer
+          example: 4
+        points:
+          type: integer
+          enum: [1, 2, 3]
+          example: 2
+        home_score:
+          type: integer
+          description: Kumulativni rezultat domaćina nakon ovog koša
+          example: 12
+        away_score:
+          type: integer
+          example: 9
+        quarter:
+          type: integer
+          example: 1
+    QuarterScore:
+      type: object
+      required: [quarter, home, away]
+      properties:
+        quarter:
+          type: integer
+          description: 1-4, 5 i više su produžeci
+          example: 1
+        home:
+          type: integer
+          example: 18
+        away:
+          type: integer
+          example: 15
+    MatchState:
+      type: object
+      required: [match_id, status, current_quarter, is_overtime, quarter_open, score, score_by_quarter, home, away, running_score, last_sequence]
+      properties:
+        match_id:
+          type: integer
+          example: 42
+        status:
+          $ref: '#/components/schemas/MatchStatus'
+        current_quarter:
+          type: integer
+          example: 2
+        is_overtime:
+          type: boolean
+          example: false
+        quarter_open:
+          type: boolean
+          description: false nakon `quarter_end`, dok sljedeća četvrtina ne počne
+          example: true
+        can_finish:
+          type: boolean
+          description: Utakmica se može završiti (zadnja četvrtina završena, rezultat nije izjednačen)
+          example: false
+        score:
+          $ref: '#/components/schemas/Score'
+        score_by_quarter:
+          type: array
+          items:
+            $ref: '#/components/schemas/QuarterScore'
+        winner:
+          type: string
+          allOf:
+            - $ref: '#/components/schemas/TeamSide'
+          nullable: true
+          description: Postavljeno kad je utakmica završena
+        home:
+          $ref: '#/components/schemas/TeamState'
+        away:
+          $ref: '#/components/schemas/TeamState'
+        running_score:
+          type: array
+          description: Kronološki tijek koševa (bez poništenih)
+          items:
+            $ref: '#/components/schemas/RunningScoreEntry'
+        last_sequence:
+          type: integer
+          description: Redni broj zadnjeg zapisanog događaja
+          example: 58
+
+    # ------------------------------------------------ closing
+    FinishInput:
+      type: object
+      properties:
+        ended_at:
+          type: string
+          format: date-time
+          description: Vrijeme završetka; zadano trenutno vrijeme servera
+          example: '2026-11-14T18:31:00Z'
+    SubmitInput:
+      type: object
+      required: [protest]
+      properties:
+        protest:
+          type: boolean
+          example: false
+        protest_note:
+          type: string
+          nullable: true
+          maxLength: 1000
+          description: Obavezno ako je `protest` true
+    Scoresheet:
+      type: object
+      required: [match, lineups, coaches, state]
+      properties:
+        match:
+          $ref: '#/components/schemas/Match'
+        lineups:
+          type: object
+          required: [home, away]
+          properties:
+            home:
+              $ref: '#/components/schemas/Lineup'
+            away:
+              $ref: '#/components/schemas/Lineup'
+        coaches:
+          type: object
+          required: [home, away]
+          properties:
+            home:
+              $ref: '#/components/schemas/MatchCoaches'
+            away:
+              $ref: '#/components/schemas/MatchCoaches'
+        state:
+          $ref: '#/components/schemas/MatchState'
