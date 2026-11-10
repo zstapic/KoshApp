@@ -25,6 +25,18 @@ android {
                 enable = true
                 packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")
             }
+            buildConfigField(
+                "String",
+                "BASE_URL",
+                "\"http://api.example.com/\""
+            )
+        }
+        debug {
+            buildConfigField(
+                "String",
+                "BASE_URL",
+                "\"http://10.0.2.2:8000/\""
+            )
         }
     }
     compileOptions {
@@ -33,6 +45,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -52,4 +65,11 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
+    // Retrofit - HTTP komunikacija
+    implementation(libs.retrofit.gson)
+    implementation(libs.retrofit.core)
+    // Lifecycle za ViewModel
+    implementation(libs.lifecycle.viewmodel.ktx)
+    implementation(libs.lifecycle.runtime.compose) // collectAsStateWithLifecycle
+    implementation(libs.lifecycle.viewmodel.compose) // viewModel() u Composeu
 }
