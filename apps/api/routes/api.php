@@ -2,6 +2,7 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\ClubController;
 
 Route::get('/health', function () {
     return response()->json([
@@ -14,3 +15,9 @@ Route::get('/health', function () {
 Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
+
+Route::get('/clubs', [ClubController::class, 'index']);
+Route::post('/clubs', [ClubController::class, 'store']);
+Route::get('/clubs/{club}', [ClubController::class, 'show']);
+Route::put('/clubs/{club}', [ClubController::class, 'update']);
+Route::delete('/clubs/{club}', [ClubController::class, 'destroy']);
