@@ -1,0 +1,55 @@
+:host {
+  display: block;
+  min-height: 100vh;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: #1f2937;
+}
+
+.topbar {
+  background: #fff;
+  border-bottom: 1px solid #e5e7eb;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.topbar-inner {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  max-width: 960px;
+  height: 56px;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+.brand {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #ea580c;
+}
+
+nav {
+  display: flex;
+  gap: 0.25rem;
+  height: 100%;
+
+  a {
+    display: flex;
+    align-items: center;
+    padding: 0 0.75rem;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: #4b5563;
+    text-decoration: none;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+
+    &:hover {
+      color: #1f2937;
+    }
+
+    &.active {
+      color: #ea580c;
+      border-bottom-color: #ea580c;
+    }
+  }
+}

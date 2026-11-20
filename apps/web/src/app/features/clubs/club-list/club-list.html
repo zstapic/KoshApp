@@ -1,0 +1,24 @@
+<div class="card">
+  <div class="header">
+    <h2>Klubovi</h2>
+    <a class="btn btn-primary" routerLink="/klubovi/novi">+ Novi klub</a>
+  </div>
+
+  @if (error()) {
+    <p class="error">{{ error() }}</p>
+  }
+
+  <ul class="list">
+    @for (club of clubs(); track club.id) {
+      <li>
+        <span class="name">{{ club.name }}</span>
+        <div class="row-actions">
+          <a class="btn btn-secondary" [routerLink]="['/klubovi', club.id, 'uredi']">Uredi</a>
+          <button class="btn btn-danger" (click)="remove(club)">Obriši</button>
+        </div>
+      </li>
+    } @empty {
+      <li class="empty">Još nema klubova.</li>
+    }
+  </ul>
+</div>

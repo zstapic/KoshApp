@@ -1,6 +1,12 @@
-<html>
-  <main>
-    <button (click)="dohvatiPodatke()">Dohvati podatke</button>
-  </main>
-  
-</html>
+<header class="topbar">
+  <div class="topbar-inner">
+    <span class="brand">KoshApp</span>
+    <nav>
+      <a routerLink="/klubovi" routerLinkActive="active">Klubovi</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <router-outlet />
+</main>

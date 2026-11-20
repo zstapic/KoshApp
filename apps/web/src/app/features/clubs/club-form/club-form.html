@@ -1,0 +1,17 @@
+<div class="card">
+  <h2>{{ id === null ? 'Novi klub' : 'Uredi klub' }}</h2>
+
+  @if (error()) {
+    <p class="error">{{ error() }}</p>
+  }
+
+  <label class="field">
+    <span>Naziv kluba</span>
+    <input [(ngModel)]="name" placeholder="npr. KK Varaždin" />
+  </label>
+
+  <div class="actions">
+    <a class="btn btn-secondary" routerLink="/klubovi">Odustani</a>
+    <button class="btn btn-primary" (click)="save()">Spremi</button>
+  </div>
+</div>
