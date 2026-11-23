@@ -465,7 +465,9 @@ paths:
       operationId: listCategories
       summary: Popis dobnih kategorija
       description: |
-        Početni popis dolazi iz seed podataka.
+        Početni popis dolazi iz seed podataka (`KategorijaSeeder`).
+        Popis je sortiran po dobi (`max_age` uzlazno), a kategorija bez gornje
+        granice (seniori) uvijek je zadnja.
 
         **Uloga:** admin
       x-roles: [admin]
@@ -3144,11 +3146,17 @@ components:
         name:
           type: string
           maxLength: 50
+          description: Jedinstven unutar saveza
           example: U15
         max_age:
           type: integer
           nullable: true
           minimum: 1
+          maximum: 99
+          description: |
+            Jedinstven unutar saveza (kategorije imaju jednoznačan redoslijed po dobi).
+            `null` ili izostavljeno = bez gornje granice (seniori); takva kategorija
+            smije postojati samo jedna po savezu.
           example: 15
     CategoryList:
       type: object
