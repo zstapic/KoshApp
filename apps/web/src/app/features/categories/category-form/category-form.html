@@ -1,0 +1,35 @@
+<div class="card">
+  <h2>{{ id === null ? 'Nova kategorija' : 'Uredi kategoriju' }}</h2>
+
+  @if (error()) {
+    <p class="error">{{ error() }}</p>
+  }
+
+  <label class="field">
+    <span>Naziv kategorije</span>
+    <input [(ngModel)]="name" placeholder="npr. U14" maxlength="50" />
+    @if (nameError()) {
+      <small class="field-error">{{ nameError() }}</small>
+    }
+  </label>
+
+  <label class="field">
+    <span>Najveća dob igrača</span>
+    <input type="number" min="1" max="99" [(ngModel)]="maxAge"
+           [disabled]="noUpperLimit()" placeholder="npr. 14" />
+    @if (maxAgeError()) {
+      <small class="field-error">{{ maxAgeError() }}</small>
+    }
+  </label>
+
+  <label class="checkbox">
+    <input type="checkbox" [checked]="noUpperLimit()"
+           (change)="toggleNoUpperLimit($any($event.target).checked)" />
+    Bez gornje granice (seniori)
+  </label>
+
+  <div class="actions">
+    <a class="btn btn-secondary" routerLink="/kategorije">Odustani</a>
+    <button class="btn btn-primary" (click)="save()" [disabled]="saving()">Spremi</button>
+  </div>
+</div>
