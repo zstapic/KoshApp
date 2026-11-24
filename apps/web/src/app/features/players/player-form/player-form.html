@@ -1,0 +1,42 @@
+<div class="card">
+  <h2>{{ id === null ? 'Novi igrač' : 'Uredi igrača' }}</h2>
+
+  @if (error()) {
+    <p class="error">{{ error() }}</p>
+  }
+
+  <label class="field">
+    <span>Ime</span>
+    <input [(ngModel)]="firstName" />
+  </label>
+
+  <label class="field">
+    <span>Prezime</span>
+    <input [(ngModel)]="lastName" />
+  </label>
+
+  <label class="field">
+    <span>Datum rođenja</span>
+    <input type="date" [(ngModel)]="dateOfBirth" />
+  </label>
+
+  <label class="field">
+    <span>Broj licence</span>
+    <input [(ngModel)]="licenseNumber" />
+  </label>
+
+  <label class="field">
+    <span>Klub</span>
+    <select [(ngModel)]="clubId">
+      <option [ngValue]="null">-- odaberi klub --</option>
+      @for (club of clubs(); track club.id) {
+        <option [ngValue]="club.id">{{ club.name }}</option>
+      }
+    </select>
+  </label>
+
+  <div class="actions">
+    <a class="btn btn-secondary" routerLink="/igraci">Odustani</a>
+    <button class="btn btn-primary" (click)="save()">Spremi</button>
+  </div>
+</div>
