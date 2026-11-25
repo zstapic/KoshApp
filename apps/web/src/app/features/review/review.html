@@ -1,1 +1,79 @@
-<p>review works!</p>
+<div class="card">
+  <h2>Ocijeni aplikaciju</h2>
+
+  @if (formError()) {
+    <p class="error" data-testid="form-error">{{ formError() }}</p>
+  }
+  @if (formSuccess()) {
+    <p class="success" data-testid="form-success">Hvala na ocjeni!</p>
+  }
+
+  <div class="field">
+    <span>Ocjena</span>
+    <div class="stars">
+      @for (n of stars; track n) {
+        <button
+          type="button"
+          class="star"
+          [class.active]="rating() !== null && n <= rating()!"
+          [attr.aria-label]="'Ocjena ' + n"
+          [attr.aria-pressed]="rating() === n"
+          (click)="rating.set(n)"
+        >★</button>
+      }
+    </div>
+  </div>
+
+  <label class="field">
+    <span>Prijedlog (nije obavezno)</span>
+    <textarea
+      aria-label="Prijedlog"
+      rows="3"
+      placeholder="Što bismo mogli poboljšati?"
+      [value]="comment()"
+      (input)="onCommentInput($event)"
+    ></textarea>
+  </label>
+
+  <div class="actions">
+    <button class="btn btn-primary" [disabled]="sending()" (click)="send()">Pošalji</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Pregled ocjena</h2>
+
+  @if (summaryError()) {
+    <p class="error" data-testid="summary-error">{{ summaryError() }}</p>
+  } @else if (summary(); as s) {
+    @if (s.count === 0) {
+      <p class="empty" data-testid="summary-empty">Još nema ocjena.</p>
+    } @else {
+      <p class="average"><strong>{{ average() }}</strong> <span>{{ countLabel() }}</span></p>
+
+      <h3>Prijedlozi</h3>
+      <ul class="list">
+        @for (c of comments(); track $index) {
+          <li data-testid="comment">
+            <span class="rating">★ {{ c.rating }}</span>
+            <span>{{ c.comment }}</span>
+          </li>
+        } @empty {
+          <li class="empty">Nema prijedloga.</li>
+        }
+      </ul>
+
+      @if (s.screens.length) {
+        <h3>Najkorišteniji zasloni</h3>
+        <ul class="list">
+          @for (screen of s.screens; track screen.name) {
+            <li data-testid="screen">
+              <span>{{ screen.name }} </span>
+              <span class="percent">{{ screen.percent }} %</span>
+            </li>
+          }
+        </ul>
+      }
+    }
+  }
+</div>
