@@ -21,11 +21,8 @@ class DemoSeeder extends Seeder
             ['id_savez' => $savez, 'korisnicko_ime' => 'zapisnicar', 'lozinka_hash' => Hash::make('password'), 'uloga' => 'Zapisnicar', 'aktivan' => true]
         );
 
-        // categories (only U14 gets a league in the demo)
-        DB::table('kategorija')->insert(['naziv' => 'U12', 'max_dob' => 12, 'id_savez' => $savez]);
-        $u14 = DB::table('kategorija')->insertGetId(['naziv' => 'U14', 'max_dob' => 14, 'id_savez' => $savez]);
-        DB::table('kategorija')->insert(['naziv' => 'U16', 'max_dob' => 16, 'id_savez' => $savez]);
-        DB::table('kategorija')->insert(['naziv' => 'Seniori', 'max_dob' => null, 'id_savez' => $savez]);
+        // categories come from KategorijaSeeder (only U14 gets a league in the demo)
+        $u14 = KategorijaSeeder::zaSavez($savez)['U14'];
 
         $sezona = DB::table('sezona')->insertGetId([
             'naziv' => '2026/27', 'godina_pocetka' => 2026, 'godina_zavrsetka' => 2027, 'id_savez' => $savez,

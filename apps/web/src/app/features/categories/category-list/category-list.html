@@ -1,0 +1,27 @@
+<div class="card">
+  <div class="header">
+    <h2>Dobne kategorije</h2>
+    <a class="btn btn-primary" routerLink="/kategorije/novi">+ Nova kategorija</a>
+  </div>
+
+  @if (error()) {
+    <p class="error">{{ error() }}</p>
+  }
+
+  <ul class="list">
+    @for (category of categories(); track category.id) {
+      <li>
+        <div class="info">
+          <span class="name">{{ category.name }}</span>
+          <span class="age">{{ opisDobi(category.max_age) }}</span>
+        </div>
+        <div class="row-actions">
+          <a class="btn btn-secondary" [routerLink]="['/kategorije', category.id, 'uredi']">Uredi</a>
+          <button class="btn btn-danger" (click)="remove(category)">Obriši</button>
+        </div>
+      </li>
+    } @empty {
+      <li class="empty">Još nema kategorija.</li>
+    }
+  </ul>
+</div>

@@ -3,6 +3,7 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\ClubController;
+use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\PlayerController;
 
 Route::get('/health', function () {
@@ -23,6 +24,11 @@ Route::get('/clubs/{club}', [ClubController::class, 'show']);
 Route::put('/clubs/{club}', [ClubController::class, 'update']);
 Route::delete('/clubs/{club}', [ClubController::class, 'destroy']);
 
+// Dobne kategorije (KOSH-48) – x-roles: [admin]
+// TODO login: grupi dodati ->middleware(['auth:sanctum', 'role:admin'])
+Route::group([], function () {
+    Route::apiResource('categories', CategoryController::class);
+});
 Route::get('/players', [PlayerController::class, 'index']);
 Route::post('/players', [PlayerController::class, 'store']);
 Route::get('/players/{player}', [PlayerController::class, 'show']);
