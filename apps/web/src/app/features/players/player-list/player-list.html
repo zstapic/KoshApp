@@ -1,0 +1,44 @@
+<div class="card">
+  <div class="header">
+    <h2>Igrači</h2>
+    <a class="btn btn-primary" routerLink="/igraci/novi">+ Novi igrač</a>
+  </div>
+
+  @if (error()) {
+    <p class="error">{{ error() }}</p>
+  }
+
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Ime</th>
+        <th>Prezime</th>
+        <th>Datum rođenja</th>
+        <th>Licenca</th>
+        <th>Klub</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (p of players(); track p.id) {
+        <tr>
+          <td class="name">{{ p.first_name }}</td>
+          <td class="name">{{ p.last_name }}</td>
+          <td>{{ p.date_of_birth }}</td>
+          <td>{{ p.license_number }}</td>
+          <td>{{ p.club.name }}</td>
+          <td>
+            <div class="row-actions">
+              <a class="btn btn-secondary" [routerLink]="['/igraci', p.id, 'uredi']">Uredi</a>
+              <button class="btn btn-danger" (click)="remove(p)">Obriši</button>
+            </div>
+          </td>
+        </tr>
+      } @empty {
+        <tr>
+          <td class="empty" colspan="6">Još nema igrača.</td>
+        </tr>
+      }
+    </tbody>
+  </table>
+</div>

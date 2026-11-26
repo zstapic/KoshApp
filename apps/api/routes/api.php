@@ -4,6 +4,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\ClubController;
 use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\PlayerController;
 
 Route::get('/health', function () {
     return response()->json([
@@ -28,3 +29,8 @@ Route::delete('/clubs/{club}', [ClubController::class, 'destroy']);
 Route::group([], function () {
     Route::apiResource('categories', CategoryController::class);
 });
+Route::get('/players', [PlayerController::class, 'index']);
+Route::post('/players', [PlayerController::class, 'store']);
+Route::get('/players/{player}', [PlayerController::class, 'show']);
+Route::put('/players/{player}', [PlayerController::class, 'update']);
+Route::delete('/players/{player}', [PlayerController::class, 'destroy']);
