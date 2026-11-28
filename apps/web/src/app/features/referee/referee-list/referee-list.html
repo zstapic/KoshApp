@@ -1,0 +1,40 @@
+<div class="card">
+  <div class="header">
+    <h2>Igrači</h2>
+    <a class="btn btn-primary" routerLink="/suci/novi">+ Novi sudac</a>
+  </div>
+
+  @if (error()) {
+    <p class="error">{{ error() }}</p>
+  }
+
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Id</th>
+        <th>Ime</th>
+        <th>Prezime</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (r of referees(); track r.id) {
+        <tr>
+          <td class="name">{{ r.id }}</td>
+          <td class="name">{{ r.first_name }}</td>
+          <td class="name">{{ r.last_name }}</td>
+          <td>
+            <div class="row-actions">
+              <a class="btn btn-secondary" [routerLink]="['/suci', r.id, 'uredi']">Uredi</a>
+              <button class="btn btn-danger" (click)="remove(r)">Obriši</button>
+            </div>
+          </td>
+        </tr>
+      } @empty {
+        <tr>
+          <td class="empty" colspan="3">Još nema sudaca.</td>
+        </tr>
+      }
+    </tbody>
+  </table>
+</div>

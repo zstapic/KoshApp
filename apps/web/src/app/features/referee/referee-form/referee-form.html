@@ -1,0 +1,22 @@
+<div class="card">
+  <h2>{{ id === null ? 'Novi sudac' : 'Uredi suca' }}</h2>
+
+  @if (error()) {
+    <p class="error">{{ error() }}</p>
+  }
+
+  <label class="field">
+    <span>Ime suca</span>
+    <input [(ngModel)]="firstName" />
+  </label>
+
+  <label class="field">
+    <span>Ime suca</span>
+    <input [(ngModel)]="lastName" />
+  </label>
+
+  <div class="actions">
+    <a class="btn btn-secondary" routerLink="/suci">Odustani</a>
+    <button class="btn btn-primary" (click)="save()">Spremi</button>
+  </div>
+</div>
