@@ -5,6 +5,8 @@ import { CategoryList } from './features/categories/category-list/category-list'
 import { CategoryForm } from './features/categories/category-form/category-form';
 import { PlayerList } from './features/players/player-list/player-list';
 import { PlayerForm } from './features/players/player-form/player-form';
+import { RefereeList } from './features/referee/referee-list/referee-list';
+import { RefereeForm } from './features/referee/referee-form/referee-form';
 
 export const routes: Routes = [
     { path: 'klubovi', component: ClubList },
@@ -16,4 +18,7 @@ export const routes: Routes = [
     { path: 'igraci', component: PlayerList },
     { path: 'igraci/novi', component: PlayerForm },
     { path: 'igraci/:id/uredi', component: PlayerForm },
+    { path: 'suci', component: RefereeList },
+    { path: 'suci/novi', component: RefereeForm },
+    { path: 'suci/:id/uredi', component: RefereeForm },
 ];

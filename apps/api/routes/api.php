@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\ClubController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\PlayerController;
+use App\Http\Controllers\RefereeController;
 
 Route::get('/health', function () {
     return response()->json([
@@ -34,3 +35,9 @@ Route::post('/players', [PlayerController::class, 'store']);
 Route::get('/players/{player}', [PlayerController::class, 'show']);
 Route::put('/players/{player}', [PlayerController::class, 'update']);
 Route::delete('/players/{player}', [PlayerController::class, 'destroy']);
+
+Route::get('/referees', [RefereeController::class, 'index']);
+Route::post('/referees', [RefereeController::class, 'store']);
+Route::get('/referees/{referee}', [RefereeController::class, 'show']);
+Route::put('/referees/{referee}', [RefereeController::class, 'update']);
+Route::delete('/referees/{referee}', [RefereeController::class, 'destroy']);
