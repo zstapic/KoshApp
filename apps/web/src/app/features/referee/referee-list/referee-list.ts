@@ -21,7 +21,7 @@ export class RefereeList implements OnInit {
   }
 
   remove(referee: Referee) {
-      if (!confirm('Obrisati suca ${referee.first_name} ${referee.last_name}?')) return;
+      if (!confirm(`Obrisati suca ${referee.first_name} ${referee.last_name}?`)) return;
       this.error.set('');
       this.refereeService.delete(referee.id).subscribe({
         next: () => this.referees.update(list => list.filter(r => r.id !== referee.id)),
